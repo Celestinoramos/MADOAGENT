@@ -1,0 +1,18 @@
+rules:
+  - id: mado.python.eval-use
+    languages: [generic]
+    message: Avoid eval() because it can execute attacker-controlled input.
+    severity: ERROR
+    pattern-regex: '\beval\s*\('
+
+  - id: mado.generic.shell-true
+    languages: [generic]
+    message: Avoid shell=True because it increases command-injection risk.
+    severity: ERROR
+    pattern-regex: 'shell\s*=\s*True'
+
+  - id: mado.generic.hardcoded-secret
+    languages: [generic]
+    message: Hardcoded secret-like value found in source code.
+    severity: WARNING
+    pattern-regex: '(?i)\b(api[_-]?key|secret|password|token)\s*[:=]\s*["''][^"'']{8,}["'']'

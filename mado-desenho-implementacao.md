@@ -1,0 +1,355 @@
+# Madó — Agente de Segurança para Desenvolvimento
+## Desenho de Implementação Completo
+
+---
+
+## 1. Visão geral
+
+**Madó** é uma ferramenta de linha de comandos (CLI) que um developer corre localmente, durante a fase de desenvolvimento, para:
+
+- Analisar código (todo o projeto ou só o que mudou) com scanners de segurança reais
+- Traduzir os resultados técnicos em explicações claras: **onde** está a falha, **porque** é uma falha (causa raiz), **qual a severidade**, e **como corrigir**
+- Fazer isto combinando **RAG** (conhecimento de segurança: OWASP, CWE) com **orquestração de ferramentas** (scanners reais, não o LLM a "adivinhar")
+
+Público-alvo: o próprio developer, no seu ambiente local, antes do código chegar a um PR ou a produção.
+
+---
+
+## 2. Arquitetura geral
+
+**Pipeline interno (por cada scan):**
+
+```
+CLI → Orquestrador → [Scanners: SAST, Dependências, Segredos] → Findings normalizados
+    → RAG (recupera contexto OWASP/CWE) → LLM (explica + prioriza) → Output
+```
+
+**Ciclo de uso do developer:**
+
+```
+Editar código → Correr CLI (scan --diff) → Ver resultados → Corrigir → repete
+```
+
+---
+
+## 3. Funcionalidades — visão geral
+
+| # | Funcionalidade | Descrição curta | Fase |
+|---|---|---|---|
+| F1 | `scan` | Analisa todo o projeto | MVP |
+| F2 | `scan --diff` | Analisa só ficheiros alterados desde o último commit | 3 |
+| F3 | Deteção de stack | Ativa só os scanners relevantes ao projeto | 3 |
+| F4 | SAST (Semgrep/Bandit) | Deteta padrões de código inseguro | MVP |
+| F5 | Scan de dependências | CVEs em bibliotecas de terceiros | 4 |
+| F6 | Scan de segredos | Chaves/tokens esquecidos no código | 4 |
+| F7 | Normalização de findings | Schema comum entre todos os scanners | MVP |
+| F8 | Base RAG | Conhecimento OWASP/CWE indexado | 2 |
+| F9 | Explicação via LLM | Causa raiz, severidade, correção sugerida | 2 |
+| F10 | `explain <id>` | Aprofunda um finding específico | 4 |
+| F11 | Cache local | Evita reprocessar código que não mudou | 5 |
+| F12 | `report --format` | Exporta relatório em md/json | 5 |
+| F13 | Configuração `.mado.yml` | Severidade mínima, ignore paths, scanners ativos | 5 |
+| F14 | Output colorido por severidade | UX no terminal | 5 |
+| F15 *(extra)* | Modo `--watch` | Re-scan automático ao gravar ficheiro | Extra |
+| F16 *(extra)* | Feedback de falsos positivos | Aprende a ignorar no futuro | Extra |
+
+---
+
+## 4. Desenho dos componentes
+
+### 4.1 CLI (camada de comandos)
+
+Framework sugerido: **Typer** (Python) — dá `--help` automático, validação de tipos, fácil de testar.
+
+```
+mado scan [PATH] [--diff] [--severity min] [--format terminal|json|md]
+mado explain FINDING_ID
+mado report [--format md|json] [--output FILE]
+mado config init          # cria .mado.yml com defaults
+mado scan --watch         # (extra) modo contínuo
+```
+
+```python
+app = typer.Typer()
+
+@app.command()
+def scan(path: str = ".", diff: bool = False, severity: str = "low", format: str = "terminal"):
+    files = resolve_scope(path, diff)
+    findings = orchestrator.run(files)
+    render(findings, format)
+```
+
+### 4.2 Orquestrador
+
+Responsabilidade: decidir o que correr, por que ordem, e agregar resultados.
+
+```python
+class Orchestrator:
+    def run(self, files: list[str]) -> list[Finding]:
+        stack = detect_stack(files)                    # F3
+        active_scanners = select_scanners(stack)        # F3
+        raw_results = []
+        for scanner in active_scanners:
+            raw_results += scanner.run(files)
+        findings = normalize(raw_results)                # F7
+        findings = enrich_with_rag_and_llm(findings)      # F8 + F9
+        return findings
+```
+
+`detect_stack()` verifica ficheiros indicadores (`package.json`, `requirements.txt`, `pyproject.toml`, `go.mod`, etc.)
+
+`select_scanners()` mapeia stack → scanners:
+
+```python
+STACK_SCANNERS = {
+    "python": [SemgrepScanner(), BanditScanner(), PipAuditScanner()],
+    "node":   [SemgrepScanner(), EslintSecurityScanner(), NpmAuditScanner()],
+    "*":      [GitleaksScanner()],   # corre sempre, independente da stack
+}
+```
+
+### 4.3 Scanners (adapters)
+
+Interface comum — cada scanner externo é "embrulhado" na mesma interface, para o orquestrador não precisar de conhecer detalhes de cada ferramenta:
+
+```python
+class Scanner(Protocol):
+    name: str
+    def run(self, files: list[str]) -> list[RawResult]: ...
+```
+
+Exemplo de adapter (Semgrep):
+
+```python
+class SemgrepScanner:
+    name = "semgrep"
+    def run(self, files):
+        result = subprocess.run(
+            ["semgrep", "--json", "--config=auto", *files],
+            capture_output=True, text=True
+        )
+        return json.loads(result.stdout)["results"]
+```
+
+Cada adapter é responsável por: montar o comando certo, correr via `subprocess`, e devolver o output bruto (JSON) — a normalização acontece depois, de forma centralizada.
+
+| Scanner | Tipo | Linguagens |
+|---|---|---|
+| Semgrep | SAST | Multi-linguagem |
+| Bandit | SAST | Python |
+| ESLint (plugin security) | SAST | JS/TS |
+| pip-audit / npm audit | Dependências | Python / Node |
+| Gitleaks | Segredos | Qualquer |
+
+### 4.4 Esquema de Findings (normalização)
+
+Todos os scanners devolvem formatos diferentes — o orquestrador converte tudo para um schema comum antes de passar ao RAG/LLM:
+
+```json
+{
+  "id": "f_8f2a1c",
+  "file": "src/api/users.py",
+  "line": 42,
+  "scanner": "semgrep",
+  "rule_id": "python.django.security.injection.sql",
+  "cwe": "CWE-89",
+  "severity_raw": "ERROR",
+  "message_raw": "Detected SQL statement built from user input",
+  "code_snippet": "query = f\"SELECT * FROM users WHERE id={user_id}\""
+}
+```
+
+Este objeto é o que entra na fase de RAG + LLM.
+
+### 4.5 Base RAG
+
+**Fontes a indexar:**
+- OWASP Top 10 (descrição + exemplos por categoria)
+- OWASP Cheat Sheets (boas práticas por tipo de vulnerabilidade)
+- Base CWE (definições + causa raiz por CWE-ID)
+- *(opcional)* guias de secure coding por linguagem
+
+**Pipeline de ingestão** (corre uma vez, offline, antes de usar o agente):
+
+```python
+docs = load_owasp_docs() + load_cwe_docs()
+chunks = chunk_documents(docs, chunk_size=500, overlap=50)
+embeddings = embed(chunks)
+vector_store.add(chunks, embeddings)   # Chroma ou FAISS, local
+```
+
+**Retrieval em tempo de scan** — para cada finding, a query usa o CWE/rule_id como chave semântica:
+
+```python
+def retrieve_context(finding: Finding) -> list[str]:
+    query = f"{finding.cwe} {finding.rule_id}"
+    return vector_store.search(query, top_k=3)
+```
+
+### 4.6 Motor LLM (explicação e priorização)
+
+**System prompt (esqueleto):**
+
+```
+És um assistente de segurança que ajuda developers a perceber vulnerabilidades
+no seu próprio código, durante o desenvolvimento. Para cada finding, usa o
+contexto fornecido (RAG) e o snippet de código para explicar:
+1. Porque é que isto é uma falha (causa raiz)
+2. Qual o impacto real
+3. Severidade ajustada (crítica/alta/média/baixa), com justificação
+4. Uma sugestão de correção concreta, com exemplo de código
+
+Sê direto e técnico. Não repitas o snippet inteiro, cita só a linha relevante.
+Responde em JSON estruturado.
+```
+
+**User prompt (template por finding):**
+
+```
+Finding: {rule_id} ({cwe})
+Ficheiro: {file}:{line}
+Código: {code_snippet}
+Contexto de segurança (RAG): {retrieved_context}
+
+Gera a explicação estruturada.
+```
+
+**Output esperado (JSON):**
+
+```json
+{
+  "explicacao": "...",
+  "causa_raiz": "...",
+  "severidade": "alta",
+  "sugestao_correcao": "...",
+  "exemplo_corrigido": "..."
+}
+```
+
+### 4.7 Cache local
+
+Evita chamar o LLM outra vez para código que não mudou:
+
+```
+.mado/cache.json  →  { "hash(file+line+rule_id)": <explicação já gerada> }
+```
+
+Antes de chamar o LLM, o orquestrador verifica se o hash já existe no cache.
+
+### 4.8 Configuração — `.mado.yml`
+
+```yaml
+severity_threshold: medium     # ignora findings abaixo disto
+scanners:
+  semgrep: true
+  bandit: true
+  gitleaks: true
+  dependencies: true
+ignore_paths:
+  - tests/
+  - vendor/
+```
+
+### 4.9 Geração de relatórios
+
+`mado report --format md` gera um ficheiro Markdown com uma secção por finding (severidade, ficheiro:linha, explicação, correção sugerida) — útil para anexar ao projeto final.
+
+### 4.10 *(extra)* Modo `--watch`
+
+Usa `watchdog` (Python) para observar mudanças em ficheiros e disparar `scan --diff` automaticamente ao gravar — aproxima-se de feedback "em tempo real" sem precisar de construir uma extensão de IDE.
+
+### 4.11 *(extra)* Feedback de falsos positivos
+
+`mado ignore <finding-id>` regista o finding numa lista de exceções (`.mado/ignore.json`), para não voltar a aparecer em scans futuros.
+
+---
+
+## 5. Estrutura de pastas do projeto
+
+```
+mado/
+├── cli.py                  # comandos Typer
+├── orchestrator.py         # lógica de orquestração
+├── scanners/
+│   ├── base.py              # interface Scanner
+│   ├── semgrep.py
+│   ├── bandit.py
+│   ├── gitleaks.py
+│   └── dependencies.py
+├── findings/
+│   ├── schema.py             # normalização
+│   └── cache.py
+├── rag/
+│   ├── ingest.py              # indexação offline OWASP/CWE
+│   ├── retrieval.py
+│   └── data/                  # docs fonte (OWASP, CWE)
+├── llm/
+│   ├── prompts.py
+│   └── client.py
+├── report/
+│   └── renderer.py             # terminal, md, json
+├── config.py
+└── .mado.yml.example
+```
+
+---
+
+## 6. Dependências principais
+
+- `typer` — CLI
+- `langchain` ou `llama-index` — orquestração RAG
+- `chromadb` — vector store local
+- `anthropic` (SDK) — chamadas ao LLM
+- `rich` — output colorido no terminal
+- `watchdog` — modo watch (extra)
+- Binários externos: `semgrep`, `bandit`, `gitleaks`, `pip-audit` / `npm audit`
+
+---
+
+## 7. Fluxo de execução passo a passo — `mado scan --diff`
+
+1. CLI recebe o comando, chama `orchestrator.run(diff=True)`
+2. Orquestrador corre `git diff --name-only` → lista de ficheiros alterados
+3. `detect_stack()` identifica Python/Node/etc.
+4. `select_scanners()` escolhe os scanners aplicáveis
+5. Cada scanner corre via `subprocess`, devolve JSON bruto
+6. `normalize()` converte tudo para o schema comum de `Finding`
+7. Para cada finding: verifica cache → se não existir, `retrieve_context()` (RAG) → chama LLM → guarda no cache
+8. `render()` mostra no terminal (cores por severidade) e/ou grava relatório
+9. Developer corrige, repete o ciclo
+
+---
+
+## 8. Roadmap de desenvolvimento (fases)
+
+| Fase | Entregável | Funcionalidades |
+|---|---|---|
+| 1 — MVP | CLI corre Semgrep, mostra findings brutos | F1, F4, F7 |
+| 2 — RAG | Explicações geradas via RAG + LLM | F8, F9 |
+| 3 — Dev-loop | Suporte a `--diff` e deteção de stack | F2, F3 |
+| 4 — Cobertura | Mais scanners + comando `explain` | F5, F6, F10 |
+| 5 — Polimento | Cache, config, relatórios, cores | F11–F14 |
+| Extra | Watch mode, feedback de falsos positivos | F15, F16 |
+
+Cada fase já é demonstrável por si só — útil para mostrar progresso ao longo da formação.
+
+---
+
+## 9. Plano de validação/testes
+
+Usa aplicações propositadamente vulneráveis para validar a deteção:
+
+- **OWASP Juice Shop** (Node/Angular) — boa cobertura de vulnerabilidades web modernas
+- **DVWA** ou **WebGoat** — bom para casos clássicos (SQLi, XSS, etc.)
+
+Métricas sugeridas para a avaliação do projeto:
+
+- **Taxa de deteção** — quantas vulnerabilidades conhecidas foram apanhadas
+- **Qualidade da explicação** — as causas raiz fazem sentido e são acionáveis
+- **Falsos positivos** — quantos findings são ruído
+
+---
+
+## 10. Âmbito e considerações
+
+Esta ferramenta serve para o developer analisar **o seu próprio código**, localmente, durante o desenvolvimento — não para testar sistemas de terceiros nem simular ataques ativos contra aplicações em produção. Vale a pena deixar isto explícito no README do projeto: reforça o valor pedagógico do trabalho como ferramenta de *shift-left security*, e não como ferramenta ofensiva.

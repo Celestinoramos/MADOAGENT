@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mado"
+version = "0.1.0"
+description = "CLI de segurança local para developers"
+readme = "mado-desenho-implementacao.md"
+requires-python = ">=3.11"
+dependencies = [
+  "typer>=0.12",
+  "rich>=13.7",
+  "semgrep>=1.0.0",
+]
+
+[project.scripts]
+mado = "mado.cli:app"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"mado.scanners" = ["rules/*.yml"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+pythonpath = ["src"]
