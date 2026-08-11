@@ -27,4 +27,6 @@ tests/test_cli.py
 tests/test_cli_explain.py
 tests/test_explanations.py
 tests/test_findings_schema.py
+tests/test_semgrep_rules.py
+tests/test_semgrep_samples.py
 tests/test_semgrep_scanner.py
