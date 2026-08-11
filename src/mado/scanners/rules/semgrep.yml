@@ -16,3 +16,14 @@ rules:
     message: Hardcoded secret-like value found in source code.
     severity: WARNING
     pattern-regex: '(?i)\b(api[_-]?key|secret|password|token)\s*[:=]\s*["''][^"'']{8,}["'']'
+  - id: mado.python.os-system
+    languages: [generic]
+    message: Avoid os.system() calls; prefer subprocess with explicit args.
+    severity: WARNING
+    pattern-regex: '\bos\.system\s*\('
+
+  - id: mado.python.requests-verify-false
+    languages: [generic]
+    message: Requests call with verify=False disables TLS verification.
+    severity: ERROR
+    pattern-regex: 'verify\s*=\s*False'
