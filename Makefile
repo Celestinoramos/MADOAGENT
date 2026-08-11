@@ -1,0 +1,92 @@
+SHELL := /bin/bash
+
+# Virtual environment location (override with VENV=path)
+VENV ?= .venv
+PY := $(VENV)/bin/python
+PIP := $(VENV)/bin/pip
+
+
+.PHONY: help venv deps install system-install test clean fclean re
+
+help:
+	@echo "Makefile targets:"
+	@echo "  make venv           -> create virtualenv at $(VENV)"
+	@echo "  make deps           -> install project dependencies into venv" 
+	@echo "  make install        -> create venv, install deps and install project (editable)"
+	@echo "  make system-install -> install project system-wide (uses current python)"
+	@echo "  make test           -> run test suite using venv python"
+	@echo "  make clean          -> remove python build artifacts (pyc, __pycache__, build/, dist/)"
+	@echo "  make fclean         -> full clean + remove venv + uninstall package"
+	@echo "  make re             -> fclean then install"
+
+venv:
+	@test -d $(VENV) || python -m venv $(VENV)
+	@$(PY) -m pip install --upgrade pip setuptools wheel
+
+deps: venv
+	@echo "Installing dependencies into $(VENV)..."
+	@$(PIP) install --upgrade pip
+	@$(PIP) install -e .
+
+install: deps
+	@echo "Project installed (editable) in $(VENV)"
+	@echo "Creating helper script 'activate' to add $(VENV)/bin to PATH for this project"
+	@printf '#!/usr/bin/env bash\n# Source to add project venv to PATH for current shell session\nexport PATH="$(CURDIR)/$(VENV)/bin:\$$PATH"\n' > activate
+	@chmod +x activate
+	@echo "Running test suite to verify installation..."
+	@$(PY) -m unittest discover -q || (echo "Tests failed during install" && exit 1)
+	@echo "Attempting to add venv path to your shell rc (backup will be created)"
+	@sh -c '\
+SHELLNAME=$$(basename "$$SHELL"); \
+if [ "$$SHELLNAME" = "zsh" ]; then RC="$$HOME/.zshrc"; elif [ "$$SHELLNAME" = "bash" ]; then RC="$$HOME/.bashrc"; else RC="$$HOME/.profile"; fi; \
+BACKUP="$$RC.mado_backup.$$(date +%s)"; \
+echo "Backing up $$RC -> $$BACKUP"; \
+cp -f "$$RC" "$$BACKUP" 2>/dev/null || true; \
+EXPORT_LINE="export PATH=\"$(CURDIR)/$(VENV)/bin:\$$PATH\""; \
+grep -Fq "$(CURDIR)/$(VENV)/bin" "$$RC" 2>/dev/null || (echo "# Added by mado install" >> "$$RC" && echo "$$EXPORT_LINE" >> "$$RC"); \
+echo "Appended PATH to $$RC"; \
+'
+	@echo "Install complete. Launching a new interactive shell with the project's venv in PATH..."
+	@echo "When you exit that shell you'll return to your previous session."
+	@exec env PATH="$(CURDIR)/$(VENV)/bin:$$PATH" $$SHELL -i
+
+system-install:
+	@echo "Installing package system-wide (may require root privileges)"
+	@python -m pip install --upgrade pip setuptools wheel
+	@python -m pip install -e .
+
+test: deps
+	@$(PY) -m unittest discover -q
+
+addpath:
+	@printf 'export PATH="%s/$(VENV)/bin:\$$PATH"' "$(CURDIR)"
+
+clean:
+	@echo "Cleaning python build artifacts"
+	@find . -name "*.pyc" -delete || true
+	@find . -type d -name "__pycache__" -exec rm -rf {} + || true
+	@rm -rf build dist *.egg-info || true
+
+fclean: clean
+	@echo "Full clean: removing venv and uninstalling package 'mado' if present"
+	@rm -rf $(VENV) || true
+	@python -m pip uninstall -y mado || true
+	@rm -rf .eggs || true
+
+re: fclean install
+	@echo "Reinstalled project"
+
+install-auto: install
+	@echo "Attempting to add venv path to your shell rc (backup will be created)"
+	@sh -c '\
+SHELLNAME=$$(basename "$$SHELL"); \
+if [ "$$SHELLNAME" = "zsh" ]; then RC="$$HOME/.zshrc"; elif [ "$$SHELLNAME" = "bash" ]; then RC="$$HOME/.bashrc"; else RC="$$HOME/.profile"; fi; \
+BACKUP="$$RC.mado_backup.$$(date +%s)"; \
+echo "Backing up $$RC -> $$BACKUP"; \
+cp -f "$$RC" "$$BACKUP" 2>/dev/null || true; \
+EXPORT_LINE="export PATH=\"$(CURDIR)/$(VENV)/bin:\$$PATH\""; \
+grep -Fq "$(CURDIR)/$(VENV)/bin" "$$RC" 2>/dev/null || echo "# Added by mado install-auto" >> "$$RC" && echo "$$EXPORT_LINE" >> "$$RC"; \
+echo "Appended PATH to $$RC"; \
+'
+	@echo "Done. Open a new shell or run: source ~/.bashrc (or source ~/.zshrc)"
+
