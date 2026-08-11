@@ -41,3 +41,30 @@ jobs:
           pip install coverage
           coverage run -m unittest discover -q
           coverage report -m
+  semgrep-scan:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Create venv
+        run: python -m venv .venv
+      - name: Install semgrep
+        run: . .venv/bin/activate && pip install --upgrade pip && pip install semgrep
+      - name: Run Semgrep against samples and validate JSON
+        run: |
+          . .venv/bin/activate
+          semgrep --json --config src/mado/scanners/rules/semgrep.yml tests/samples > semgrep_output.json || true
+          python - <<'PY'
+import json, sys
+try:
+    with open('semgrep_output.json', 'r', encoding='utf-8') as fh:
+        json.load(fh)
+except Exception as exc:
+    print('Semgrep output is not valid JSON or missing:', exc)
+    sys.exit(1)
+print('Semgrep output parsed as JSON')
+PY
