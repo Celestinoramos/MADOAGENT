@@ -27,3 +27,26 @@ rules:
     message: Requests call with verify=False disables TLS verification.
     severity: ERROR
     pattern-regex: 'verify\s*=\s*False'
+  - id: mado.python.pickle-load
+    languages: [generic]
+    message: Using pickle.load on untrusted data can lead to remote code execution.
+    severity: ERROR
+    pattern-regex: '\bpickle\.loads?\s*\('
+
+  - id: mado.python.exec-use
+    languages: [generic]
+    message: Avoid exec(); it can execute attacker-controlled code.
+    severity: ERROR
+    pattern-regex: '\bexec\s*\('
+
+  - id: mado.python.subprocess-shell-true
+    languages: [generic]
+    message: subprocess call with shell=True is vulnerable to injection.
+    severity: ERROR
+    pattern-regex: 'subprocess\.[A-Za-z_]+\s*\(.*shell\s*=\s*True'
+
+  - id: mado.python.sql-string-concat
+    languages: [generic]
+    message: SQL query constructed via string concatenation may be vulnerable to injection.
+    severity: WARNING
+    pattern-regex: '(?i)execute\s*\(.*\+.*\)'
