@@ -44,3 +44,5 @@ coverage.xml
 # OS files
 .DS_Store
 Thumbs.db
+# Local helper script created by Makefile
+activate
