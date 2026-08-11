@@ -29,7 +29,23 @@ O fluxo atual do Madó é:
 Requisitos:
 - Python 3.11+
 
-Instale o pacote localmente:
+Instalação rápida (recomendada):
+
+```bash
+# cria um virtualenv em .venv, instala dependências e o pacote em modo editable
+make install
+```
+
+Alternativas:
+
+- Instalar manualmente no venv:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+```
+- Instalar globalmente (não recomendado):
 
 ```bash
 python -m pip install -e .
@@ -39,7 +55,10 @@ python -m pip install -e .
 
 ### Scan do projeto
 
+Após `make install` o comando `mado` estará disponível no seu shell.
+
 ```bash
+# executar scan padrão
 mado scan .
 ```
 
@@ -52,7 +71,18 @@ mado explain <finding_id> --path .
 ### Formato JSON
 
 ```bash
+# saída em JSON
 mado scan . --format json
+```
+
+Para desenvolver e testar localmente:
+
+```bash
+# rodar a suíte de testes
+make test
+
+# limpar artefatos gerados
+make clean
 ```
 
 ## Estrutura do projeto
