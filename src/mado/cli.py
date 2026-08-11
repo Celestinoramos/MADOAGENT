@@ -30,6 +30,7 @@ def main() -> None:
 @app.command()
 def scan(
     path: Path = typer.Argument(Path("."), exists=True, file_okay=True, dir_okay=True, readable=True),
+    diff: bool = typer.Option(False, "--diff", help="Scan only files changed since the last commit"),
     format: str = typer.Option("terminal", "--format", case_sensitive=False),
 ) -> None:
     """Run Semgrep over a project and show normalized findings."""
@@ -38,7 +39,7 @@ def scan(
         raise typer.BadParameter("format must be terminal or json")
 
     try:
-        findings = run_orchestrator(str(path))
+        findings = run_orchestrator(str(path), diff=diff)
     except RuntimeError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc

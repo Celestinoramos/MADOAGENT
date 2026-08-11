@@ -8,26 +8,38 @@
 **Madó** é uma ferramenta de linha de comandos (CLI) que um developer corre localmente, durante a fase de desenvolvimento, para:
 
 - Analisar código (todo o projeto ou só o que mudou) com scanners de segurança reais
+- Testar dinamicamente uma aplicação a correr (local ou de staging), usando ferramentas de DAST já estabelecidas
 - Traduzir os resultados técnicos em explicações claras: **onde** está a falha, **porque** é uma falha (causa raiz), **qual a severidade**, e **como corrigir**
-- Fazer isto combinando **RAG** (conhecimento de segurança: OWASP, CWE) com **orquestração de ferramentas** (scanners reais, não o LLM a "adivinhar")
+- Fazer isto combinando **RAG** (conhecimento de segurança: OWASP, CWE) com **orquestração multi-agente** (agentes especializados que chamam scanners e ferramentas reais — nunca o LLM a "adivinhar" ou a gerar exploits)
 
-Público-alvo: o próprio developer, no seu ambiente local, antes do código chegar a um PR ou a produção.
+Público-alvo: o próprio developer, no seu ambiente local, antes do código chegar a um PR ou a produção — sempre contra alvos que o utilizador possui ou está explicitamente autorizado a testar.
 
 ---
 
 ## 2. Arquitetura geral
 
-**Pipeline interno (por cada scan):**
+**Pipeline interno — modo estático (`mado scan`, análise de código):**
 
 ```
 CLI → Orquestrador → [Scanners: SAST, Dependências, Segredos] → Findings normalizados
     → RAG (recupera contexto OWASP/CWE) → LLM (explica + prioriza) → Output
 ```
 
+**Pipeline interno — modo dinâmico (`mado scan --target`, app a correr):**
+
+```
+CLI → Orquestrador (Graph) → Agente de Reconhecimento (mapeia superfície)
+    → Agente DAST (ZAP + Nuclei) → Findings normalizados
+    → RAG (recupera contexto OWASP/CWE) → LLM (explica + prioriza)
+    → Agente de Relatório → Output
+```
+
+Os dois modos convergem no mesmo pipeline de Findings → RAG → LLM — só muda a forma de gerar os findings (scanners estáticos vs. agentes de reconhecimento + DAST). O orquestrador central decide que modo(s) ativar consoante o tipo de alvo fornecido.
+
 **Ciclo de uso do developer:**
 
 ```
-Editar código → Correr CLI (scan --diff) → Ver resultados → Corrigir → repete
+Editar código → Correr CLI (scan --diff ou scan --target) → Ver resultados → Corrigir → repete
 ```
 
 ---
@@ -52,6 +64,12 @@ Editar código → Correr CLI (scan --diff) → Ver resultados → Corrigir → 
 | F14 | Output colorido por severidade | UX no terminal | 5 |
 | F15 *(extra)* | Modo `--watch` | Re-scan automático ao gravar ficheiro | Extra |
 | F16 *(extra)* | Feedback de falsos positivos | Aprende a ignorar no futuro | Extra |
+| F17 | `scan --target` | Ativa o modo dinâmico contra uma app a correr | 6 |
+| F18 | Agente de Reconhecimento | Mapeia rotas/endpoints (crawling ou spec OpenAPI/Postman) | 6 |
+| F19 | Agente DAST | Corre ZAP + Nuclei contra a superfície mapeada | 6 |
+| F20 | Orquestração multi-agente (Graph) | Coordena SAST/Recon/DAST via estado partilhado | 6 |
+| F21 | Confirmação de autorização | Bloqueia o scan dinâmico sem confirmação explícita do utilizador | 6 |
+| F22 | Agente de Relatório | Compila sumário executivo + severidade agregada | 6 |
 
 ---
 
@@ -262,6 +280,102 @@ Usa `watchdog` (Python) para observar mudanças em ficheiros e disparar `scan --
 
 `mado ignore <finding-id>` regista o finding numa lista de exceções (`.mado/ignore.json`), para não voltar a aparecer em scans futuros.
 
+### 4.12 Orquestrador central (Graph of Agents)
+
+Com o modo dinâmico, o orquestrador simples de antes passa a coordenar vários agentes especializados através de um estado partilhado (`ScanState`), em vez de só chamar scanners em sequência:
+
+```python
+@dataclass
+class ScanState:
+    target: Target
+    attack_surface: AttackSurface | None = None
+    findings: list[Finding] = field(default_factory=list)
+    report: Report | None = None
+
+class GraphOrchestrator:
+    def run(self, target: Target) -> Report:
+        state = ScanState(target=target)
+
+        if target.is_local_code:
+            state.findings += SastOrchestrator().run(target.files)            # F1-F7 (modo estático)
+
+        if target.is_running_app:
+            confirm_authorization(target)                                     # F21 — guardrail obrigatório
+            state.attack_surface = ReconAgent().map_surface(target)            # F18
+            state.findings += DastAgent().scan(state.attack_surface, target)   # F19
+
+        state.findings = enrich_with_rag_and_llm(state.findings)               # F8 + F9
+        state.report = ReportAgent().compile(state.findings)                   # F22
+        return state.report
+```
+
+Cada agente lê do `ScanState` só o que precisa e escreve os seus resultados de volta — um padrão "blackboard" simples, mais fácil de depurar do que agentes a comunicarem diretamente entre si, e suficiente para o âmbito deste projeto.
+
+### 4.13 Agente de Reconhecimento
+
+Responsabilidade: mapear a superfície de ataque do alvo **antes** do DAST correr, para o DAST saber exatamente que rotas/endpoints testar em vez de andar a adivinhar.
+
+```python
+class ReconAgent:
+    def map_surface(self, target: Target) -> AttackSurface:
+        if target.openapi_spec:
+            return parse_openapi(target.openapi_spec)      # preferível: determinístico
+        if target.postman_collection:
+            return parse_postman(target.postman_collection)
+        return crawl(target.url, max_depth=2)               # fallback: crawling leve
+```
+
+Preferir sempre uma spec (OpenAPI/Postman) a crawling quando disponível — é determinístico e não depende de o crawler conseguir navegar a app corretamente.
+
+### 4.14 Agente DAST
+
+Responsabilidade: correr ferramentas de teste dinâmico **já estabelecidas e maduras** contra a superfície mapeada. Este agente não gera nem executa exploits customizados — orquestra scanners existentes, tal como o agente SAST orquestra o Semgrep.
+
+```python
+class DastAgent:
+    def scan(self, surface: AttackSurface, target: Target) -> list[RawResult]:
+        results = []
+        results += ZapScanner().run(target.url, surface)
+        results += NucleiScanner().run(target.url, surface)
+        return results
+```
+
+| Scanner DAST | Função |
+|---|---|
+| OWASP ZAP (baseline/full scan) | Deteção ativa geral (OWASP Top 10) |
+| Nuclei | Templates da comunidade para CVEs e misconfigurations conhecidas |
+
+### 4.15 Confirmação de autorização (guardrail obrigatório)
+
+Antes de qualquer scan dinâmico, o CLI exige confirmação explícita — não pode ser saltado por flag nem por configuração:
+
+```
+⚠ Vais correr testes ativos contra: https://your-app.com
+   Confirmas que possuis este alvo ou tens autorização explícita para o testar? [y/N]
+```
+
+```python
+def confirm_authorization(target: Target) -> None:
+    if not target.is_owned_or_authorized_confirmed:
+        answer = prompt(f"Confirmas autorização para testar {target.url}? [y/N]")
+        if answer.lower() != "y":
+            raise AbortScan("Scan dinâmico cancelado — autorização não confirmada.")
+```
+
+### 4.16 Agente de Relatório
+
+Responsabilidade: compilar os findings de todos os agentes (SAST + DAST + RAG) num relatório único, com sumário executivo e breakdown de severidade — o "compliance-ready report" que fecha o ciclo.
+
+```python
+class ReportAgent:
+    def compile(self, findings: list[Finding]) -> Report:
+        return Report(
+            summary=summarize_by_severity(findings),
+            findings=findings,
+            generated_at=now(),
+        )
+```
+
 ---
 
 ## 5. Estrutura de pastas do projeto
@@ -269,13 +383,24 @@ Usa `watchdog` (Python) para observar mudanças em ficheiros e disparar `scan --
 ```
 mado/
 ├── cli.py                  # comandos Typer
-├── orchestrator.py         # lógica de orquestração
+├── orchestrator.py         # orquestrador estático (modo scan de código)
+├── graph/
+│   ├── state.py              # ScanState (blackboard partilhado)
+│   └── graph_orchestrator.py # orquestrador central multi-agente
+├── agents/
+│   ├── recon.py               # Agente de Reconhecimento
+│   ├── dast.py                # Agente DAST (ZAP, Nuclei)
+│   └── report_agent.py        # Agente de Relatório
 ├── scanners/
 │   ├── base.py              # interface Scanner
 │   ├── semgrep.py
 │   ├── bandit.py
 │   ├── gitleaks.py
 │   └── dependencies.py
+├── dast_scanners/
+│   ├── base.py                # interface DastScanner
+│   ├── zap.py
+│   └── nuclei.py
 ├── findings/
 │   ├── schema.py             # normalização
 │   └── cache.py
@@ -302,11 +427,14 @@ mado/
 - `anthropic` (SDK) — chamadas ao LLM
 - `rich` — output colorido no terminal
 - `watchdog` — modo watch (extra)
-- Binários externos: `semgrep`, `bandit`, `gitleaks`, `pip-audit` / `npm audit`
+- Binários externos (modo estático): `semgrep`, `bandit`, `gitleaks`, `pip-audit` / `npm audit`
+- Binários/imagens externos (modo dinâmico): **OWASP ZAP** (imagem Docker `zaproxy/zap-stable`), **Nuclei** (binário Go)
 
 ---
 
-## 7. Fluxo de execução passo a passo — `mado scan --diff`
+## 7. Fluxos de execução passo a passo
+
+### 7.1 Modo estático — `mado scan --diff`
 
 1. CLI recebe o comando, chama `orchestrator.run(diff=True)`
 2. Orquestrador corre `git diff --name-only` → lista de ficheiros alterados
@@ -317,6 +445,18 @@ mado/
 7. Para cada finding: verifica cache → se não existir, `retrieve_context()` (RAG) → chama LLM → guarda no cache
 8. `render()` mostra no terminal (cores por severidade) e/ou grava relatório
 9. Developer corrige, repete o ciclo
+
+### 7.2 Modo dinâmico — `mado scan --target <url>`
+
+1. CLI recebe o comando, identifica que o alvo é uma app a correr (`is_running_app`)
+2. `confirm_authorization()` pede confirmação explícita — sem confirmação, o scan para aqui (F21)
+3. `ReconAgent.map_surface()` mapeia rotas (via spec OpenAPI/Postman se fornecida, senão crawling leve)
+4. `DastAgent.scan()` corre ZAP e Nuclei contra a superfície mapeada
+5. `normalize()` converte os resultados para o mesmo schema comum de `Finding`
+6. Para cada finding: `retrieve_context()` (RAG) → chama LLM → explica causa raiz e sugere correção
+7. `ReportAgent.compile()` gera o relatório final com sumário executivo e severidade agregada
+8. `render()` mostra no terminal e/ou grava relatório
+9. Developer corrige, re-testa
 
 ---
 
@@ -329,6 +469,7 @@ mado/
 | 3 — Dev-loop | Suporte a `--diff` e deteção de stack | F2, F3 |
 | 4 — Cobertura | Mais scanners + comando `explain` | F5, F6, F10 |
 | 5 — Polimento | Cache, config, relatórios, cores | F11–F14 |
+| 6 — Modo dinâmico | Recon + DAST + orquestração multi-agente + relatório | F17–F22 |
 | Extra | Watch mode, feedback de falsos positivos | F15, F16 |
 
 Cada fase já é demonstrável por si só — útil para mostrar progresso ao longo da formação.
@@ -352,4 +493,12 @@ Métricas sugeridas para a avaliação do projeto:
 
 ## 10. Âmbito e considerações
 
-Esta ferramenta serve para o developer analisar **o seu próprio código**, localmente, durante o desenvolvimento — não para testar sistemas de terceiros nem simular ataques ativos contra aplicações em produção. Vale a pena deixar isto explícito no README do projeto: reforça o valor pedagógico do trabalho como ferramenta de *shift-left security*, e não como ferramenta ofensiva.
+Esta ferramenta serve para o developer analisar **o seu próprio código e as suas próprias aplicações**, durante o desenvolvimento — nunca sistemas de terceiros sem autorização explícita. Isto aplica-se tanto ao modo estático (código) como ao modo dinâmico (app a correr).
+
+**Decisões de âmbito deliberadas:**
+
+- O Agente DAST orquestra ferramentas de teste dinâmico já estabelecidas e maduras (ZAP, Nuclei) — o Madó **não** inclui um motor de geração ou execução de exploits customizados. A validação de vulnerabilidades fica a cargo dessas ferramentas, não do LLM.
+- A confirmação de autorização (F21) é obrigatória antes de qualquer scan dinâmico e não pode ser desativada por configuração ou flag — é uma proteção de design, não uma sugestão.
+- Os alvos recomendados para testes e demonstração são sempre ambientes próprios ou aplicações feitas para este fim (OWASP Juice Shop, DVWA, WebGoat, ou a própria app do developer em `localhost`).
+
+Vale a pena deixar isto explícito no README do projeto: reforça o valor pedagógico do trabalho como ferramenta de *shift-left security* e *DevSecOps*, e não como ferramenta ofensiva.

@@ -1,3 +1,4 @@
+README.md
 mado-desenho-implementacao.md
 pyproject.toml
 src/mado/__init__.py
@@ -10,6 +11,10 @@ src/mado.egg-info/dependency_links.txt
 src/mado.egg-info/entry_points.txt
 src/mado.egg-info/requires.txt
 src/mado.egg-info/top_level.txt
+src/mado/explanations/__init__.py
+src/mado/explanations/engine.py
+src/mado/explanations/knowledge_base.py
+src/mado/explanations/schema.py
 src/mado/findings/__init__.py
 src/mado/findings/schema.py
 src/mado/report/__init__.py
@@ -17,6 +22,9 @@ src/mado/report/renderer.py
 src/mado/scanners/__init__.py
 src/mado/scanners/base.py
 src/mado/scanners/semgrep.py
+src/mado/scanners/rules/semgrep.yml
 tests/test_cli.py
+tests/test_cli_explain.py
+tests/test_explanations.py
 tests/test_findings_schema.py
 tests/test_semgrep_scanner.py
