@@ -1,0 +1,18 @@
+# Madó configuration
+severity_threshold: low            # low | medium | high | critical
+scanners:
+  semgrep: true
+  bandit: true
+  gitleaks: true
+  dependencies: true
+ignore_paths:
+  - tests/
+  - vendor/
+llm:
+  enabled: true                    # set to false to force deterministic explanations
+  provider: anthropic
+  model: claude-sonnet-4-5
+dast:
+  enable_zap: true
+  enable_nuclei: true
+  zap_image: zaproxy/zap-stable

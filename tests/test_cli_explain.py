@@ -7,6 +7,7 @@ from typer.testing import CliRunner
 
 from mado.cli import app
 from mado.findings.schema import Finding
+from mado.orchestrator import ScanResult
 
 
 class CliExplainTests(unittest.TestCase):
@@ -24,7 +25,7 @@ class CliExplainTests(unittest.TestCase):
             code_snippet="query = f'SELECT * FROM users WHERE id={user_id}'",
         )
 
-        with patch("mado.cli.run_orchestrator", return_value=[finding]):
+        with patch("mado.cli.run_scan", return_value=ScanResult(findings=[finding])):
             result = runner.invoke(app, ["explain", "f_test", "--path", "."])
 
         self.assertEqual(result.exit_code, 0)

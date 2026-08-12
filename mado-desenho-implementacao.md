@@ -502,3 +502,56 @@ Esta ferramenta serve para o developer analisar **o seu próprio código e as su
 - Os alvos recomendados para testes e demonstração são sempre ambientes próprios ou aplicações feitas para este fim (OWASP Juice Shop, DVWA, WebGoat, ou a própria app do developer em `localhost`).
 
 Vale a pena deixar isto explícito no README do projeto: reforça o valor pedagógico do trabalho como ferramenta de *shift-left security* e *DevSecOps*, e não como ferramenta ofensiva.
+
+---
+
+## 11. Estado de implementação
+
+Acompanhamento do progresso contra as funcionalidades e fases definidas acima. Última atualização após a conclusão das 6 fases do roadmap.
+
+### 11.1 Funcionalidades
+
+| # | Funcionalidade | Estado | Onde |
+|---|---|---|---|
+| F1 | `scan` | ✅ | `cli.py`, `orchestrator.py` |
+| F2 | `scan --diff` | ✅ | `orchestrator.py` (`_git_changed_files`) |
+| F3 | Deteção de stack | ✅ | `scanners/registry.py` |
+| F4 | SAST (Semgrep/Bandit) | ✅ | `scanners/semgrep.py`, `scanners/bandit.py` |
+| F5 | Scan de dependências | ✅ | `scanners/dependencies.py` (pip-audit/npm audit) |
+| F6 | Scan de segredos | ✅ | `scanners/gitleaks.py` |
+| F7 | Normalização de findings | ✅ | `findings/schema.py` |
+| F8 | Base RAG | ✅ | `rag/` (store TF-IDF local + docs OWASP/CWE) |
+| F9 | Explicação via LLM | ✅ | `llm/`, `explanations/engine.py` (fallback KB + cache) |
+| F10 | `explain <id>` | ✅ | `cli.py` |
+| F11 | Cache local | ✅ | `findings/cache.py` (`.mado/cache.json`) |
+| F12 | `report --format` | ✅ | `report/` (md/json/terminal) |
+| F13 | Configuração `.mado.yml` | ✅ | `config.py` |
+| F14 | Output colorido por severidade | ✅ | `report/renderer.py` |
+| F15 *(extra)* | Modo `--watch` | ⏳ | — |
+| F16 *(extra)* | Feedback de falsos positivos | ⏳ | — |
+| F17 | `scan --target` | ✅ | `cli.py`, `graph/graph_orchestrator.py` |
+| F18 | Agente de Reconhecimento | ✅ | `agents/recon.py` |
+| F19 | Agente DAST (ZAP + Nuclei) | ✅ | `agents/dast.py`, `dast_scanners/` |
+| F20 | Orquestração multi-agente (Graph) | ✅ | `graph/` (`ScanState`, blackboard) |
+| F21 | Confirmação de autorização | ✅ | `graph/authorization.py` |
+| F22 | Agente de Relatório | ✅ | `agents/report_agent.py` |
+
+### 11.2 Fases do roadmap
+
+| Fase | Estado |
+|---|---|
+| 1 — MVP (F1, F4, F7) | ✅ |
+| 2 — RAG (F8, F9) | ✅ |
+| 3 — Dev-loop (F2, F3) | ✅ |
+| 4 — Cobertura (F5, F6, F10) | ✅ |
+| 5 — Polimento (F11–F14) | ✅ |
+| 6 — Modo dinâmico (F17–F22) | ✅ |
+| Extra (F15, F16) | ⏳ |
+
+### 11.3 Notas de implementação
+
+- **RAG**: o vector store usa TF-IDF + similaridade por cosseno, implementado em `rag/store.py` (offline, sem dependências pesadas). A interface (`add`/`search`/`save`/`load`) permite trocar por Chroma/FAISS sem alterar a camada de retrieval.
+- **LLM**: o cliente Anthropic (`llm/client.py`) é ativado por `ANTHROPIC_API_KEY` (ou desativável em `.mado.yml` via `llm.enabled: false`). Sem key, o motor determinístico (`explanations/knowledge_base.py`) é usado — a ferramenta funciona offline.
+- **Scanners opcionais**: `bandit`, `gitleaks`, `pip-audit`, `npm`, `nuclei` e Docker (para ZAP) são usados se estiverem instalados; caso contrário são saltados com aviso, nunca a bloquear o scan.
+- **Autorização (F21)**: obrigatória e não contornável por flag ou configuração; é um guardrail de design.
+- **Testes**: 65 testes unitários (`make test` ou `python -m unittest discover -q`).

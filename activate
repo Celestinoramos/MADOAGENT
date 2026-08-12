@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
 # Source to add project venv to PATH for current shell session
-export PATH="/.venv/bin:\$PATH"
+export PATH="/home/ccumbica/Documents/MADOAGENT/.venv/bin:\$PATH"

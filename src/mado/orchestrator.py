@@ -1,42 +1,41 @@
-"""Scan orchestration for the MVP phase."""
+"""Scan orchestration for the static (code) mode."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Iterable
-import subprocess
 from pathlib import Path
+import subprocess
+from typing import Iterable
+import os
 
-from mado.findings.schema import Finding
+from mado.config import Config, load_config
+from mado.explanations import explain_finding
+from mado.findings.cache import ExplanationCache
+from mado.findings.ignore import IgnoreList
+from mado.findings.schema import Finding, meets_severity_threshold, normalize_severity
+from mado.llm.client import set_llm_enabled
 from mado.scanners.base import Scanner
+from mado.scanners.registry import detect_stack, detect_stack_for_path, missing_scanners_for_stack, select_scanners
 from mado.scanners.semgrep import SemgrepScanner
+
+_REPO_SCOPED_SCANNERS = {"gitleaks", "pip-audit", "npm-audit"}
 
 
 @dataclass(slots=True)
-class Orchestrator:
-    """Coordinate scanners for a scan run.
+class ScanResult:
+    """Outcome of a static scan run."""
 
-    In phase 1 the orchestrator is intentionally small: it always runs Semgrep
-    and returns normalized findings. Later phases can expand this to stack
-    detection, diff scope, and additional scanners without changing the CLI.
-    """
-
-    scanners: list[Scanner] = field(default_factory=lambda: [SemgrepScanner()])
-
-    def run(self, path: str) -> list[Finding]:
-        """Run all configured scanners for the given path."""
-
-        findings: list[Finding] = []
-        for scanner in self.scanners:
-            findings.extend(scanner.run(path))
-        return findings
+    findings: list[Finding] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    stacks: set[str] = field(default_factory=set)
+    config: Config = field(default_factory=Config)
 
 
 def _git_changed_files(path: str) -> list[str]:
-    """Return a list of files changed according to `git diff --name-only`.
+    """Return absolute paths changed since the last commit.
 
-    If the path is not a git repository or Git is not available, an empty
-    list is returned so the caller can fall back to scanning the whole tree.
+    If the path is not a Git repository or Git is unavailable, an empty list
+    is returned so the caller can fall back to scanning the whole tree.
     """
 
     repo = Path(path).resolve()
@@ -53,30 +52,119 @@ def _git_changed_files(path: str) -> list[str]:
     if completed.returncode != 0:
         return []
 
-    files = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
-    return files
+    return [
+        str((repo / line.strip()).resolve())
+        for line in completed.stdout.splitlines()
+        if line.strip()
+    ]
 
 
-def run_orchestrator(path: str, scanners: Iterable[Scanner] | None = None, diff: bool = False) -> list[Finding]:
-    """Convenience wrapper used by the CLI and tests.
+def _matches_ignore(file_path: str, scan_root: Path, ignore_paths: list[str]) -> bool:
+    """Return True when a finding's file matches one of the ignored paths."""
+    if not ignore_paths:
+        return False
+    try:
+        relative = os.path.relpath(Path(file_path).resolve(), scan_root)
+    except ValueError:
+        relative = file_path
+    normalized = relative.replace("\\", "/")
+    for ignored in ignore_paths:
+        pattern = ignored.strip().replace("\\", "/").rstrip("/")
+        if not pattern:
+            continue
+        if normalized == pattern or normalized.startswith(pattern + "/"):
+            return True
+        if Path(ignored).name in normalized.split("/"):
+            continue
+    return False
 
-    If `diff` is true, attempt to limit the scan to files reported by Git.
-    If Git is unavailable or the repository cannot be inspected, the full
-    path is scanned instead.
+
+def _filter_and_enrich(
+    findings: list[Finding],
+    config: Config,
+    scan_root: Path,
+    cache: ExplanationCache,
+    ignore: IgnoreList | None = None,
+) -> list[Finding]:
+    ignored = ignore if ignore is not None else IgnoreList(root=scan_root)
+    kept: list[Finding] = []
+    for finding in findings:
+        if ignored.contains(finding.id):
+            continue
+        if _matches_ignore(finding.file, scan_root, config.ignore_paths):
+            continue
+        if not meets_severity_threshold(normalize_severity(finding.severity_raw), config.severity_threshold):
+            continue
+        if finding.explanation is None:
+            finding.explanation = explain_finding(finding, cache=cache)
+        kept.append(finding)
+    return kept
+
+
+def run_scan(
+    path: str,
+    diff: bool = False,
+    config: Config | None = None,
+    scanners: Iterable[Scanner] | None = None,
+) -> ScanResult:
+    """Run the full static scan pipeline for a project path.
+
+    Steps: resolve scope (full tree or ``git diff``), detect the stack, select
+    the applicable and available scanners, run them, normalize + filter the
+    findings, and enrich each one through the RAG + LLM pipeline (with cache).
     """
 
-    configured_scanners = list(scanners) if scanners is not None else [SemgrepScanner()]
-    orchestrator = Orchestrator(configured_scanners)
+    active_config = config if config is not None else load_config(path)
+    set_llm_enabled(active_config.llm_enabled)
 
+    scan_root = Path(path).resolve()
+    if scan_root.is_file():
+        scan_root = scan_root.parent
+
+    warnings: list[str] = []
+    changed: list[str] = []
     if diff:
         changed = _git_changed_files(path)
-        if changed:
-            # If git returned changed files, run scanners against each file
-            findings: list[Finding] = []
-            for scanner in orchestrator.scanners:
+
+    stacks = detect_stack_for_path(path)
+    stacks.update(detect_stack(changed))
+    stacks = {stack for stack in stacks if stack}
+
+    missing = missing_scanners_for_stack(stacks)
+    if missing:
+        warnings.append(
+            "Scanners not installed (skipped): " + ", ".join(sorted(missing))
+            + " — install them to enable those checks."
+        )
+
+    selected = list(scanners) if scanners is not None else select_scanners(path, stacks, active_config)
+    if not selected:
+        warnings.append("No scanners available. Install semgrep to run static checks.")
+
+    findings: list[Finding] = []
+    for scanner in selected:
+        try:
+            if diff and changed and scanner.name not in _REPO_SCOPED_SCANNERS:
                 for file_path in changed:
                     findings.extend(scanner.run(file_path))
-            return findings
-        # fallthrough: no git info available — scan whole path
+            else:
+                findings.extend(scanner.run(path))
+        except RuntimeError as exc:
+            warnings.append(f"[{scanner.name}] {exc}")
+        except FileNotFoundError as exc:
+            warnings.append(f"[{scanner.name}] {exc}")
 
-    return orchestrator.run(path)
+    cache = ExplanationCache(root=scan_root)
+    findings = _filter_and_enrich(findings, active_config, scan_root, cache)
+
+    return ScanResult(findings=findings, warnings=warnings, stacks=stacks, config=active_config)
+
+
+def run_orchestrator(
+    path: str,
+    scanners: Iterable[Scanner] | None = None,
+    diff: bool = False,
+) -> list[Finding]:
+    """Backwards-compatible wrapper returning only the findings list."""
+
+    return run_scan(path, diff=diff, scanners=scanners).findings

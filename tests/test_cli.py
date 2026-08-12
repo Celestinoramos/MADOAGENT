@@ -12,7 +12,7 @@ class CliTests(unittest.TestCase):
     def test_scan_reports_scanner_error_without_traceback(self) -> None:
         runner = CliRunner()
 
-        with patch("mado.cli.run_orchestrator", side_effect=RuntimeError("Semgrep binary not found. Install semgrep and ensure it is on PATH.")):
+        with patch("mado.cli.run_scan", side_effect=RuntimeError("Semgrep binary not found. Install semgrep and ensure it is on PATH.")):
             result = runner.invoke(app, ["scan", "."])
 
         self.assertNotEqual(result.exit_code, 0)

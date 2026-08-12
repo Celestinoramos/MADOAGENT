@@ -12,6 +12,9 @@ dependencies = [
   "typer>=0.12",
   "rich>=13.7",
   "semgrep>=1.0.0",
+  "PyYAML>=6.0",
+  "requests>=2.31",
+  "anthropic>=0.39",
   "pytest>=8.0",
 ]
 
@@ -26,6 +29,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "mado.scanners" = ["rules/*.yml"]
+"mado.rag" = ["data/*.md"]
 
 [tool.pytest.ini_options]
 addopts = "-q"

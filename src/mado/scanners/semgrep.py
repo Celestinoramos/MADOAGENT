@@ -20,6 +20,14 @@ class SemgrepScanner:
 
     name: str = "semgrep"
 
+    @classmethod
+    def is_available(cls) -> bool:
+        try:
+            cls()._resolve_executable()
+        except FileNotFoundError:
+            return False
+        return True
+
     def _resolve_config_path(self) -> str:
         config_path = Path(__file__).with_name("rules") / "semgrep.yml"
         if not config_path.exists():
@@ -91,4 +99,18 @@ class SemgrepScanner:
             if not isinstance(raw_result, dict):
                 continue
             findings.append(normalize_semgrep_result(raw_result))
+        for finding in findings:
+            self._fill_code_snippet(finding)
         return findings
+
+    @staticmethod
+    def _fill_code_snippet(finding: Finding) -> None:
+        """Prefer the real code line from disk over the report snippet."""
+        if not finding.line:
+            return
+        try:
+            lines = Path(finding.file).read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return
+        if 1 <= finding.line <= len(lines):
+            finding.code_snippet = lines[finding.line - 1]

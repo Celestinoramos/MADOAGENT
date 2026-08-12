@@ -44,3 +44,6 @@ coverage.xml
 # OS files
 .DS_Store
 Thumbs.db
+
+# Madó local runtime data
+.mado/
