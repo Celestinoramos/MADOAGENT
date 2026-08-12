@@ -15,6 +15,7 @@ dependencies = [
   "PyYAML>=6.0",
   "requests>=2.31",
   "anthropic>=0.39",
+  "watchdog>=4.0",
   "pytest>=8.0",
 ]
 
