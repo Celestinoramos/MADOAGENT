@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import unittest
 from unittest.mock import patch
 
@@ -8,6 +9,12 @@ from typer.testing import CliRunner
 from mado.cli import app
 from mado.findings.schema import Finding
 from mado.orchestrator import ScanResult
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(text: str) -> str:
+    return _ANSI_RE.sub("", text)
 
 
 class CliExplainTests(unittest.TestCase):
@@ -29,9 +36,10 @@ class CliExplainTests(unittest.TestCase):
             result = runner.invoke(app, ["explain", "f_test", "--path", "."])
 
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("Finding f_test", result.stdout)
-        self.assertIn("SQL injection", result.stdout)
-        self.assertIn("parameterized", result.stdout)
+        stdout = _strip_ansi(result.stdout)
+        self.assertIn("Finding f_test", stdout)
+        self.assertIn("SQL injection", stdout)
+        self.assertIn("parameterized", stdout)
 
 
 if __name__ == "__main__":
