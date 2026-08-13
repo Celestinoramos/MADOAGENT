@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from mado.findings.schema import Finding, normalize_gitleaks_result
+from mado.scanners.base import resolve_binary
 
 
 @dataclass(slots=True)
@@ -20,10 +20,11 @@ class GitleaksScanner:
 
     @classmethod
     def is_available(cls) -> bool:
-        return shutil.which("gitleaks") is not None
+        return resolve_binary("gitleaks") is not None
 
     def run(self, path: str) -> list[Finding]:
-        if not self.is_available():
+        executable = resolve_binary("gitleaks")
+        if executable is None:
             raise RuntimeError("Gitleaks binary not found. Install gitleaks and ensure it is on PATH.")
 
         target = Path(path).resolve()
@@ -34,7 +35,7 @@ class GitleaksScanner:
             report_path = report_file.name
 
         command = [
-            "gitleaks",
+            executable,
             "detect",
             "--source",
             str(target),

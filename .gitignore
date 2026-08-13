@@ -47,3 +47,8 @@ Thumbs.db
 
 # Madó local runtime data
 .mado/
+
+# Local secrets — never commit API keys
+.env
+.env.*
+!.env.example

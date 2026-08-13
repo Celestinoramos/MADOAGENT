@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 from mado.findings.schema import Finding, normalize_bandit_result
+from mado.scanners.base import resolve_binary
 
 
 @dataclass(slots=True)
@@ -20,19 +20,20 @@ class BanditScanner:
 
     @classmethod
     def is_available(cls) -> bool:
-        return shutil.which("bandit") is not None
+        return resolve_binary("bandit") is not None
 
     def run(self, path: str) -> list[Finding]:
-        if not self.is_available():
+        executable = resolve_binary("bandit")
+        if executable is None:
             raise RuntimeError("Bandit binary not found. Install bandit and ensure it is on PATH.")
 
         target = Path(path).resolve()
         if target.is_file() and target.suffix != ".py":
             return []
 
-        command = ["bandit", "-r", "-f", "json", "-q"]
+        command = [executable, "-r", "-f", "json", "-q"]
         if target.is_file():
-            command = ["bandit", "-f", "json", "-q"]
+            command = [executable, "-f", "json", "-q"]
         else:
             command.append("--exclude")
             command.append(",".join(self.exclude))

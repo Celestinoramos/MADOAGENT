@@ -5,6 +5,7 @@ src/mado/__init__.py
 src/mado/__main__.py
 src/mado/cli.py
 src/mado/config.py
+src/mado/env.py
 src/mado/orchestrator.py
 src/mado/watch.py
 src/mado.egg-info/PKG-INFO
@@ -58,6 +59,7 @@ tests/test_cli.py
 tests/test_cli_explain.py
 tests/test_config.py
 tests/test_dynamic.py
+tests/test_env.py
 tests/test_explanations.py
 tests/test_findings_schema.py
 tests/test_llm.py

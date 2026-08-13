@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,7 +12,7 @@ from mado.findings.schema import (
     normalize_npm_vuln,
     normalize_pip_audit_vuln,
 )
-from mado.scanners.base import Scanner
+from mado.scanners.base import Scanner, resolve_binary
 
 _PYTHON_MANIFESTS = ("requirements.txt", "pyproject.toml", "Pipfile", "setup.py")
 _NODE_MANIFESTS = ("package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml")
@@ -35,10 +34,11 @@ class PipAuditScanner:
 
     @classmethod
     def is_available(cls) -> bool:
-        return shutil.which("pip-audit") is not None
+        return resolve_binary("pip-audit") is not None
 
     def run(self, path: str) -> list[Finding]:
-        if not self.is_available():
+        executable = resolve_binary("pip-audit")
+        if executable is None:
             raise RuntimeError("pip-audit binary not found. Install pip-audit and ensure it is on PATH.")
 
         target = Path(path).resolve()
@@ -48,7 +48,7 @@ class PipAuditScanner:
         if manifest is None:
             return []
 
-        command = ["pip-audit", "-f", "json"]
+        command = [executable, "-f", "json"]
         if manifest.name in ("requirements.txt", "Pipfile"):
             command += ["-r", str(manifest)]
         else:
@@ -85,10 +85,11 @@ class NpmAuditScanner:
 
     @classmethod
     def is_available(cls) -> bool:
-        return shutil.which("npm") is not None
+        return resolve_binary("npm") is not None
 
     def run(self, path: str) -> list[Finding]:
-        if shutil.which("npm") is None:
+        executable = resolve_binary("npm")
+        if executable is None:
             raise RuntimeError("npm binary not found. Install Node.js and ensure npm is on PATH.")
 
         target = Path(path).resolve()
@@ -98,7 +99,7 @@ class NpmAuditScanner:
         if manifest is None:
             return []
 
-        completed = subprocess.run(["npm", "audit", "--json"], cwd=str(target), capture_output=True, text=True)
+        completed = subprocess.run([executable, "audit", "--json"], cwd=str(target), capture_output=True, text=True)
         if completed.returncode not in (0, 1):
             details = (
                 completed.stderr.strip() or completed.stdout.strip() or "npm audit exited with an unexpected error"

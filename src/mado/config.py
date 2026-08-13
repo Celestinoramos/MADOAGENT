@@ -242,7 +242,7 @@ cache_ttl_days: 30          # reuse cached explanations for this many days (null
 llm:
   enabled: true                    # set to false to force deterministic explanations
   provider: anthropic
-  model: claude-sonnet-4-5
+  model: claude-sonnet-4-5         # a chave vai em ANTHROPIC_API_KEY (env ou .env), nunca aqui
 dast:
   enable_zap: true
   enable_nuclei: true

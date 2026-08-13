@@ -19,12 +19,19 @@ from mado.rag.retrieval import retrieve_context
 
 _DEFAULT_MODEL = "claude-sonnet-4-5"
 _LLM_OVERRIDE: bool | None = None
+_LLM_MODEL_OVERRIDE: str | None = None
 
 
 def set_llm_enabled(value: bool | None) -> None:
     """Force the LLM backend on/off regardless of environment (config-driven)."""
     global _LLM_OVERRIDE
     _LLM_OVERRIDE = value
+
+
+def set_llm_model(model: str | None) -> None:
+    """Set the model configured in ``.mado.yml`` (``llm.model``) if any."""
+    global _LLM_MODEL_OVERRIDE
+    _LLM_MODEL_OVERRIDE = model if isinstance(model, str) and model else None
 
 
 def llm_enabled() -> bool:
@@ -45,10 +52,14 @@ def llm_enabled() -> bool:
 class LlmClient:
     """Thin wrapper around the Anthropic SDK that returns structured JSON."""
 
-    def __init__(self, model: str = _DEFAULT_MODEL, api_key: str | None = None) -> None:
-        self.model = model
+    def __init__(self, model: str | None = None, api_key: str | None = None) -> None:
+        self.model = model or _LLM_MODEL_OVERRIDE or _DEFAULT_MODEL
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         self._client: Any | None = None
+
+    def __repr__(self) -> str:
+        masked = "***" if self.api_key else None
+        return f"LlmClient(model={self.model!r}, api_key={masked!r})"
 
     @property
     def available(self) -> bool:

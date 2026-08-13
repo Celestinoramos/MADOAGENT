@@ -35,7 +35,25 @@ Requisitos: Python 3.11+. Os scanners opcionais (`bandit`, `gitleaks`, `pip-audi
 python -m pip install -e .
 ```
 
-Para ativar explicações com LLM, define a variável `ANTHROPIC_API_KEY`. Sem ela, o Madó usa o motor determinístico (base de conhecimento local), pelo que a ferramenta funciona offline.
+## Chave da API Anthropic (opcional)
+
+As explicações via LLM são ativadas quando a chave está disponível; sem ela, o Madó usa o motor determinístico (base de conhecimento local) e funciona offline.
+
+**A chave nunca deve ir no `.mado.yml` nem no código** — usa uma variável de ambiente ou o ficheiro local `.env` (que está no `.gitignore`):
+
+```bash
+cp .env.example .env        # depois edita e preenche a chave
+# ou, equivalente:
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+O Madó carrega `.env` automaticamente (procura no projeto e diretórios-pai; a variável de ambiente real tem sempre precedência). Para forçar o modo determinístico mesmo com chave definida:
+
+```bash
+export MADO_LLM_PROVIDER=none
+```
+
+O modelo vem de `llm.model` no `.mado.yml` (default: `claude-sonnet-4-5`).
 
 Para desenvolvimento (lint, typecheck, scanners opcionais):
 

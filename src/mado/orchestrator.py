@@ -9,11 +9,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from mado.config import Config, load_config
+from mado.env import load_project_env
 from mado.explanations import explain_finding
 from mado.findings.cache import ExplanationCache
 from mado.findings.ignore import IgnoreList
 from mado.findings.schema import Finding, meets_severity_threshold, normalize_severity
-from mado.llm.client import set_llm_enabled
+from mado.llm.client import set_llm_enabled, set_llm_model
 from mado.scanners.base import Scanner
 from mado.scanners.registry import (
     detect_stack,
@@ -135,7 +136,9 @@ def run_scan(
     """
 
     active_config = config if config is not None else load_config(path)
+    load_project_env(path)
     set_llm_enabled(active_config.llm_enabled)
+    set_llm_model(active_config.llm.get("model"))
 
     scan_root = Path(path).resolve()
     if scan_root.is_file():

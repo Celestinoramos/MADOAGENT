@@ -55,6 +55,8 @@ class DebouncedHandler(FileSystemEventHandler):
     def on_any_event(self, event: FileSystemEvent) -> None:
         if event.is_directory:
             return
+        if isinstance(event.src_path, bytes):
+            return
         if should_ignore_event(event.src_path, self.ignore_segments):
             return
         self._schedule()
@@ -72,6 +74,12 @@ class DebouncedHandler(FileSystemEventHandler):
             self.trigger()
         finally:
             with self._lock:
+                self._timer = None
+
+    def stop(self) -> None:
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()
                 self._timer = None
 
 

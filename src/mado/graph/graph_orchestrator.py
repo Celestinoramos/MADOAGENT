@@ -14,10 +14,11 @@ from mado.agents.dast import DastAgent
 from mado.agents.recon import ReconAgent
 from mado.agents.report_agent import ReportAgent
 from mado.config import Config, load_config
+from mado.env import load_project_env
 from mado.findings.cache import ExplanationCache
 from mado.graph.authorization import require_authorization
 from mado.graph.state import ScanState, Target
-from mado.llm.client import set_llm_enabled
+from mado.llm.client import set_llm_enabled, set_llm_model
 from mado.orchestrator import _filter_and_enrich, run_scan
 from mado.report.models import Report
 
@@ -42,7 +43,9 @@ class GraphOrchestrator:
     ) -> Report:
         """Run the appropriate mode(s) for the target and return a report."""
         config = self._resolve_config(target)
+        load_project_env(target.path if target.is_local_code else ".")
         set_llm_enabled(config.llm_enabled)
+        set_llm_model(config.llm.get("model"))
 
         state = ScanState(target=target)
 

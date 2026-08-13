@@ -113,6 +113,12 @@ class OrchestratorTests(unittest.TestCase):
             findings = run_orchestrator(".")
             self.assertEqual(len(findings), 1)
 
+    def test_run_scan_loads_project_env(self) -> None:
+        with patch("mado.orchestrator.load_project_env") as mock_env:
+            with patch("mado.explanations.engine.llm_enabled", return_value=False):
+                run_scan(".", scanners=[])
+                mock_env.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

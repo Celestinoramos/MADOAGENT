@@ -19,9 +19,9 @@ class _CompletedProcess:
 
 
 class BanditScannerTests(unittest.TestCase):
-    @patch("mado.scanners.bandit.shutil.which", return_value="/usr/bin/bandit")
+    @patch("mado.scanners.bandit.resolve_binary", return_value="/usr/bin/bandit")
     @patch("mado.scanners.bandit.subprocess.run")
-    def test_run_normalizes_results(self, mock_run: object, _mock_which: object) -> None:
+    def test_run_normalizes_results(self, mock_run: object, _mock_resolve: object) -> None:
         payload = {
             "results": [
                 {
@@ -40,14 +40,14 @@ class BanditScannerTests(unittest.TestCase):
         self.assertEqual(findings[0].scanner, "bandit")
         self.assertEqual(findings[0].line, 3)
 
-    @patch("mado.scanners.bandit.shutil.which", return_value=None)
-    def test_missing_binary_raises(self, _mock_which: object) -> None:
+    @patch("mado.scanners.bandit.resolve_binary", return_value=None)
+    def test_missing_binary_raises(self, _mock_resolve: object) -> None:
         with self.assertRaisesRegex(RuntimeError, "Bandit binary not found"):
             BanditScanner().run(".")
 
-    @patch("mado.scanners.bandit.shutil.which", return_value="/usr/bin/bandit")
+    @patch("mado.scanners.bandit.resolve_binary", return_value="/usr/bin/bandit")
     @patch("mado.scanners.bandit.subprocess.run")
-    def test_run_passes_exclude_flag(self, mock_run: object, _mock_which: object) -> None:
+    def test_run_passes_exclude_flag(self, mock_run: object, _mock_resolve: object) -> None:
         mock_run.return_value = _CompletedProcess(0, json.dumps({"results": []}))  # type: ignore[assignment]
         BanditScanner(exclude=(".venv", ".git")).run(".")
         command = mock_run.call_args.args[0]  # type: ignore[attr-defined]
@@ -56,8 +56,8 @@ class BanditScannerTests(unittest.TestCase):
 
 
 class GitleaksScannerTests(unittest.TestCase):
-    @patch("mado.scanners.gitleaks.shutil.which", return_value="/usr/bin/gitleaks")
-    def test_run_normalizes_report(self, _mock_which: object) -> None:
+    @patch("mado.scanners.gitleaks.resolve_binary", return_value="/usr/bin/gitleaks")
+    def test_run_normalizes_report(self, _mock_resolve: object) -> None:
         findings_payload = {
             "Findings": [
                 {
@@ -83,16 +83,16 @@ class GitleaksScannerTests(unittest.TestCase):
         self.assertEqual(findings[0].cwe, "CWE-798")
         self.assertEqual(findings[0].file, "config.py")
 
-    @patch("mado.scanners.gitleaks.shutil.which", return_value=None)
-    def test_missing_binary_raises(self, _mock_which: object) -> None:
+    @patch("mado.scanners.gitleaks.resolve_binary", return_value=None)
+    def test_missing_binary_raises(self, _mock_resolve: object) -> None:
         with self.assertRaisesRegex(RuntimeError, "Gitleaks binary not found"):
             GitleaksScanner().run(".")
 
 
 class PipAuditScannerTests(unittest.TestCase):
-    @patch("mado.scanners.dependencies.shutil.which", return_value="/usr/bin/pip-audit")
+    @patch("mado.scanners.dependencies.resolve_binary", return_value="/usr/bin/pip-audit")
     @patch("mado.scanners.dependencies.subprocess.run")
-    def test_run_normalizes_results(self, mock_run: object, _mock_which: object) -> None:
+    def test_run_normalizes_results(self, mock_run: object, _mock_resolve: object) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "requirements.txt").write_text("requests==2.19.1\n", encoding="utf-8")
@@ -119,9 +119,9 @@ class PipAuditScannerTests(unittest.TestCase):
 
 
 class NpmAuditScannerTests(unittest.TestCase):
-    @patch("mado.scanners.dependencies.shutil.which", return_value="/usr/bin/npm")
+    @patch("mado.scanners.dependencies.resolve_binary", return_value="/usr/bin/npm")
     @patch("mado.scanners.dependencies.subprocess.run")
-    def test_run_normalizes_results(self, mock_run: object, _mock_which: object) -> None:
+    def test_run_normalizes_results(self, mock_run: object, _mock_resolve: object) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "package.json").write_text("{}", encoding="utf-8")

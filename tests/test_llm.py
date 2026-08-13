@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import unittest
 
-from mado.llm.client import LlmClient, llm_enabled, set_llm_enabled
+from mado.llm.client import LlmClient, llm_enabled, set_llm_enabled, set_llm_model
 from mado.llm.prompts import SYSTEM_PROMPT, build_user_prompt
 
 
@@ -12,6 +12,7 @@ class LlmClientTests(unittest.TestCase):
         self._old_key = os.environ.get("ANTHROPIC_API_KEY")
         self._old_provider = os.environ.get("MADO_LLM_PROVIDER")
         set_llm_enabled(None)
+        set_llm_model(None)
 
     def tearDown(self) -> None:
         if self._old_key is None:
@@ -23,6 +24,7 @@ class LlmClientTests(unittest.TestCase):
         else:
             os.environ["MADO_LLM_PROVIDER"] = self._old_provider
         set_llm_enabled(None)
+        set_llm_model(None)
 
     def test_disabled_without_api_key(self) -> None:
         os.environ.pop("ANTHROPIC_API_KEY", None)
@@ -32,6 +34,18 @@ class LlmClientTests(unittest.TestCase):
         os.environ["ANTHROPIC_API_KEY"] = "test-key"
         set_llm_enabled(False)
         self.assertFalse(llm_enabled())
+
+    def test_config_model_is_used_as_default(self) -> None:
+        set_llm_model("claude-3-7-sonnet")
+        client = LlmClient()
+        self.assertEqual(client.model, "claude-3-7-sonnet")
+
+    def test_repr_masks_api_key(self) -> None:
+        os.environ["ANTHROPIC_API_KEY"] = "sk-ant-super-secret"
+        client = LlmClient()
+        rendered = repr(client)
+        self.assertNotIn("sk-ant-super-secret", rendered)
+        self.assertIn("***", rendered)
 
     def test_parse_json_with_markdown_fence(self) -> None:
         raw = '```json\n{"summary": "x", "severity": "high"}\n```'
