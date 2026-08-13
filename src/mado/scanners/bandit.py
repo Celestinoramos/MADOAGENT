@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 import shutil
-from dataclasses import dataclass
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 from mado.findings.schema import Finding, normalize_bandit_result
@@ -16,6 +16,7 @@ class BanditScanner:
     """Run Bandit and normalize its JSON output."""
 
     name: str = "bandit"
+    exclude: tuple[str, ...] = ()
 
     @classmethod
     def is_available(cls) -> bool:
@@ -32,6 +33,9 @@ class BanditScanner:
         command = ["bandit", "-r", "-f", "json", "-q"]
         if target.is_file():
             command = ["bandit", "-f", "json", "-q"]
+        else:
+            command.append("--exclude")
+            command.append(",".join(self.exclude))
         command.append(str(target))
 
         completed = subprocess.run(command, capture_output=True, text=True)

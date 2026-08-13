@@ -7,7 +7,6 @@ normalizes each match into a finding.
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 from dataclasses import dataclass
 

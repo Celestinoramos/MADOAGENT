@@ -90,6 +90,7 @@ mado scan --watch         # (extra) modo contínuo
 ```python
 app = typer.Typer()
 
+
 @app.command()
 def scan(path: str = ".", diff: bool = False, severity: str = "low", format: str = "terminal"):
     files = resolve_scope(path, diff)
@@ -104,13 +105,13 @@ Responsabilidade: decidir o que correr, por que ordem, e agregar resultados.
 ```python
 class Orchestrator:
     def run(self, files: list[str]) -> list[Finding]:
-        stack = detect_stack(files)                    # F3
-        active_scanners = select_scanners(stack)        # F3
+        stack = detect_stack(files)  # F3
+        active_scanners = select_scanners(stack)  # F3
         raw_results = []
         for scanner in active_scanners:
             raw_results += scanner.run(files)
-        findings = normalize(raw_results)                # F7
-        findings = enrich_with_rag_and_llm(findings)      # F8 + F9
+        findings = normalize(raw_results)  # F7
+        findings = enrich_with_rag_and_llm(findings)  # F8 + F9
         return findings
 ```
 
@@ -121,8 +122,8 @@ class Orchestrator:
 ```python
 STACK_SCANNERS = {
     "python": [SemgrepScanner(), BanditScanner(), PipAuditScanner()],
-    "node":   [SemgrepScanner(), EslintSecurityScanner(), NpmAuditScanner()],
-    "*":      [GitleaksScanner()],   # corre sempre, independente da stack
+    "node": [SemgrepScanner(), EslintSecurityScanner(), NpmAuditScanner()],
+    "*": [GitleaksScanner()],  # corre sempre, independente da stack
 }
 ```
 
@@ -133,6 +134,7 @@ Interface comum — cada scanner externo é "embrulhado" na mesma interface, par
 ```python
 class Scanner(Protocol):
     name: str
+
     def run(self, files: list[str]) -> list[RawResult]: ...
 ```
 
@@ -141,11 +143,9 @@ Exemplo de adapter (Semgrep):
 ```python
 class SemgrepScanner:
     name = "semgrep"
+
     def run(self, files):
-        result = subprocess.run(
-            ["semgrep", "--json", "--config=auto", *files],
-            capture_output=True, text=True
-        )
+        result = subprocess.run(["semgrep", "--json", "--config=auto", *files], capture_output=True, text=True)
         return json.loads(result.stdout)["results"]
 ```
 
@@ -193,7 +193,7 @@ Este objeto é o que entra na fase de RAG + LLM.
 docs = load_owasp_docs() + load_cwe_docs()
 chunks = chunk_documents(docs, chunk_size=500, overlap=50)
 embeddings = embed(chunks)
-vector_store.add(chunks, embeddings)   # Chroma ou FAISS, local
+vector_store.add(chunks, embeddings)  # Chroma ou FAISS, local
 ```
 
 **Retrieval em tempo de scan** — para cada finding, a query usa o CWE/rule_id como chave semântica:
@@ -292,20 +292,21 @@ class ScanState:
     findings: list[Finding] = field(default_factory=list)
     report: Report | None = None
 
+
 class GraphOrchestrator:
     def run(self, target: Target) -> Report:
         state = ScanState(target=target)
 
         if target.is_local_code:
-            state.findings += SastOrchestrator().run(target.files)            # F1-F7 (modo estático)
+            state.findings += SastOrchestrator().run(target.files)  # F1-F7 (modo estático)
 
         if target.is_running_app:
-            confirm_authorization(target)                                     # F21 — guardrail obrigatório
-            state.attack_surface = ReconAgent().map_surface(target)            # F18
-            state.findings += DastAgent().scan(state.attack_surface, target)   # F19
+            confirm_authorization(target)  # F21 — guardrail obrigatório
+            state.attack_surface = ReconAgent().map_surface(target)  # F18
+            state.findings += DastAgent().scan(state.attack_surface, target)  # F19
 
-        state.findings = enrich_with_rag_and_llm(state.findings)               # F8 + F9
-        state.report = ReportAgent().compile(state.findings)                   # F22
+        state.findings = enrich_with_rag_and_llm(state.findings)  # F8 + F9
+        state.report = ReportAgent().compile(state.findings)  # F22
         return state.report
 ```
 
@@ -319,10 +320,10 @@ Responsabilidade: mapear a superfície de ataque do alvo **antes** do DAST corre
 class ReconAgent:
     def map_surface(self, target: Target) -> AttackSurface:
         if target.openapi_spec:
-            return parse_openapi(target.openapi_spec)      # preferível: determinístico
+            return parse_openapi(target.openapi_spec)  # preferível: determinístico
         if target.postman_collection:
             return parse_postman(target.postman_collection)
-        return crawl(target.url, max_depth=2)               # fallback: crawling leve
+        return crawl(target.url, max_depth=2)  # fallback: crawling leve
 ```
 
 Preferir sempre uma spec (OpenAPI/Postman) a crawling quando disponível — é determinístico e não depende de o crawler conseguir navegar a app corretamente.
@@ -553,5 +554,9 @@ Acompanhamento do progresso contra as funcionalidades e fases definidas acima. �
 - **RAG**: o vector store usa TF-IDF + similaridade por cosseno, implementado em `rag/store.py` (offline, sem dependências pesadas). A interface (`add`/`search`/`save`/`load`) permite trocar por Chroma/FAISS sem alterar a camada de retrieval.
 - **LLM**: o cliente Anthropic (`llm/client.py`) é ativado por `ANTHROPIC_API_KEY` (ou desativável em `.mado.yml` via `llm.enabled: false`). Sem key, o motor determinístico (`explanations/knowledge_base.py`) é usado — a ferramenta funciona offline.
 - **Scanners opcionais**: `bandit`, `gitleaks`, `pip-audit`, `npm`, `nuclei` e Docker (para ZAP) são usados se estiverem instalados; caso contrário são saltados com aviso, nunca a bloquear o scan.
+- **Exclusões por defeito** (`ignore_paths`): `.venv`, `.git`, `node_modules`, `__pycache__`, `.mado`, `.pytest_cache`, `.mypy_cache` são sempre excluídos do scan estático (e repassados como `--exclude` ao Semgrep/Bandit); o developer pode acrescentar outros (ex.: `vendor/`).
+- **Filtro de ficheiros não-code** (`code_extensions`): findings SAST apenas em ficheiros com extensões de código (`.py`, `.js`, ...) — elimina falsos positivos em markdown/docs; scanners de segredos e dependências não são filtrados. Lista vazia desativa o filtro.
+- **Cache**: `.mado/cache.json` tem guarda de versão de schema e TTL por defeito de 30 dias (`cache_ttl_days` no config; `null` mantém para sempre).
+- **Qualidade/CI**: `make lint` (ruff), `make format` (ruff format), `make typecheck` (mypy em `src/`) e workflow GitHub Actions (`.github/workflows/ci.yml`) com ruff + mypy + pytest + `mado scan .`.
 - **Autorização (F21)**: obrigatória e não contornável por flag ou configuração; é um guardrail de design.
-- **Testes**: 65 testes unitários (`make test` ou `python -m unittest discover -q`).
+- **Testes**: suite unitária (`make test` ou `python -m pytest`).

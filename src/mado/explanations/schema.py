@@ -18,7 +18,7 @@ class FindingExplanation:
     references: list[str] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "FindingExplanation":
+    def from_dict(cls, payload: dict[str, Any]) -> FindingExplanation:
         """Build an explanation from a parsed LLM JSON payload (best-effort)."""
         references = payload.get("references")
         if isinstance(references, list):

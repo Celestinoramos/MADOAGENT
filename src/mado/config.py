@@ -13,6 +13,50 @@ _DEFAULT_SCANNERS = {
     "dependencies": True,
 }
 
+# Default directories excluded from scans: tooling/vendored code is never
+# analyzed and only adds noise (e.g. the project's own .venv).
+DEFAULT_IGNORE_PATHS = [
+    ".venv",
+    ".git",
+    "node_modules",
+    "__pycache__",
+    ".mado",
+    ".pytest_cache",
+    ".mypy_cache",
+]
+
+DEFAULT_CODE_EXTENSIONS = [
+    ".py",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".go",
+    ".java",
+    ".rb",
+    ".php",
+    ".c",
+    ".h",
+    ".cc",
+    ".cpp",
+    ".hpp",
+    ".cs",
+    ".rs",
+    ".swift",
+    ".kt",
+    ".kts",
+    ".scala",
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".html",
+    ".htm",
+    ".vue",
+    ".sql",
+    ".css",
+    ".scss",
+]
+
 DEFAULT_LLM = {
     "enabled": True,
     "provider": "anthropic",
@@ -34,13 +78,15 @@ class Config:
 
     severity_threshold: str = "low"
     scanners: dict[str, bool] = field(default_factory=lambda: dict(_DEFAULT_SCANNERS))
-    ignore_paths: list[str] = field(default_factory=list)
+    ignore_paths: list[str] = field(default_factory=lambda: list(DEFAULT_IGNORE_PATHS))
+    code_extensions: list[str] = field(default_factory=lambda: list(DEFAULT_CODE_EXTENSIONS))
+    cache_ttl_days: int | None = 30
     llm: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_LLM))
     dast: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_DAST))
     source_path: str | None = None
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any], source_path: str | None = None) -> "Config":
+    def from_dict(cls, raw: dict[str, Any], source_path: str | None = None) -> Config:
         """Build a config from a loaded YAML dict, applying defaults."""
 
         scanners = dict(_DEFAULT_SCANNERS)
@@ -59,14 +105,23 @@ class Config:
         if isinstance(raw_dast, dict):
             dast.update({str(k): v for k, v in raw_dast.items()})
 
-        ignore_paths = raw.get("ignore_paths", [])
+        ignore_paths = raw.get("ignore_paths")
         if not isinstance(ignore_paths, list):
-            ignore_paths = []
+            ignore_paths = list(DEFAULT_IGNORE_PATHS)
+
+        code_extensions = raw.get("code_extensions")
+        if not isinstance(code_extensions, list):
+            code_extensions = list(DEFAULT_CODE_EXTENSIONS)
+
+        cache_ttl = raw.get("cache_ttl_days", 30)
+        cache_ttl_days: int | None = None if cache_ttl is None else max(int(cache_ttl), 0)
 
         return cls(
             severity_threshold=str(raw.get("severity_threshold", "low")),
             scanners=scanners,
             ignore_paths=[str(item) for item in ignore_paths],
+            code_extensions=[str(extension) for extension in code_extensions],
+            cache_ttl_days=cache_ttl_days,
             llm=llm,
             dast=dast,
             source_path=source_path,
@@ -155,9 +210,35 @@ scanners:
   bandit: true
   gitleaks: true
   dependencies: true
-ignore_paths:
-  - tests/
+ignore_paths:                 # dirs excluded from scans (defaults always apply)
+  - .venv/
+  - .git/
+  - node_modules/
+  - __pycache__/
+  - .mado/
+  - .pytest_cache/
+  - .mypy_cache/
   - vendor/
+code_extensions:              # SAST findings are kept only for these extensions
+  - .py
+  - .js
+  - .ts
+  - .go
+  - .java
+  - .rb
+  - .php
+  - .c
+  - .h
+  - .cc
+  - .cpp
+  - .cs
+  - .rs
+  - .swift
+  - .kt
+  - .html
+  - .vue
+  - .sql
+cache_ttl_days: 30          # reuse cached explanations for this many days (null = forever)
 llm:
   enabled: true                    # set to false to force deterministic explanations
   provider: anthropic

@@ -53,7 +53,8 @@ def explain_finding(
 def _generate_explanation_payload(finding: Finding) -> dict:
     """Generate (and return) an explanation payload, preferring the LLM."""
     if llm_enabled():
-        llm_payload = LlmClient().explain(finding, retrieved_context(finding, top_k=_TOP_K))
+        context = retrieve_context(finding, top_k=_TOP_K)
+        llm_payload = LlmClient().explain(finding, context)
         if llm_payload is not None:
             if "severity" not in llm_payload or not llm_payload["severity"]:
                 llm_payload["severity"] = normalize_severity(finding.severity_raw)

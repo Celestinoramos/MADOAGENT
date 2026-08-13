@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, replace
 import json
-from pathlib import Path
 import sys
+from dataclasses import asdict, replace
+from pathlib import Path
 
 import typer
 from rich.console import Console
 
-from mado.config import load_config, load_config_file, render_example_config
+from mado.config import Config, load_config, load_config_file, render_example_config
 from mado.explanations import explain_finding
 from mado.findings.ignore import IgnoreList
 from mado.graph.graph_orchestrator import GraphOrchestrator
@@ -39,7 +39,7 @@ def _print_warnings(warnings: list[str]) -> None:
         error_console.print(f"[yellow]warning:[/yellow] {warning}")
 
 
-def _resolve_config(path: Path, config_path: str | None) -> object:
+def _resolve_config(path: Path, config_path: str | None) -> Config:
     if config_path:
         return load_config_file(config_path)
     return load_config(path)
@@ -251,8 +251,7 @@ def ignore(
 
     if not any(item.id == finding_id for item in result.findings):
         error_console.print(
-            f"Finding {finding_id} not found in the scan of {path}. "
-            "Check the id with 'mado scan' or 'mado explain'."
+            f"Finding {finding_id} not found in the scan of {path}. Check the id with 'mado scan' or 'mado explain'."
         )
         raise typer.Exit(code=1)
 

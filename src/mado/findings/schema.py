@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+from collections.abc import Iterable
 from collections.abc import Iterable as IterableABC
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Iterable
-import hashlib
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from mado.explanations.schema import FindingExplanation
@@ -30,7 +31,7 @@ class Finding:
     severity_raw: str
     message_raw: str
     code_snippet: str | None = None
-    explanation: "FindingExplanation | None" = None
+    explanation: FindingExplanation | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -65,8 +66,8 @@ def _extract_cwe(metadata: Any) -> str | None:
 
 
 def _hash_finding(file: str, line: int | None, scanner: str, rule_id: str | None, message_raw: str) -> str:
-    payload = f"{file}:{line}:{scanner}:{rule_id}:{message_raw}".encode("utf-8")
-    return "f_" + hashlib.sha1(payload).hexdigest()[:10]
+    payload = f"{file}:{line}:{scanner}:{rule_id}:{message_raw}".encode()
+    return "f_" + hashlib.sha1(payload).hexdigest()[:10]  # nosec B324 — stable content key, not a security hash
 
 
 def normalize_semgrep_result(result: dict[str, Any]) -> Finding:
@@ -219,7 +220,7 @@ def normalize_gitleaks_result(result: dict[str, Any]) -> Finding:
         raise ValueError("Gitleaks finding is missing a file path")
 
     secret = result.get("Secret")
-    description = _first_non_empty([result.get("Description"), result.get("RuleID"), "Potential secret found"])
+    description = _first_non_empty([result.get("Description"), result.get("RuleID")]) or "Potential secret found"
     severity = _first_non_empty([result.get("Severity"), result.get("severity")]) or "WARNING"
 
     snippet = None

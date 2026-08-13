@@ -14,6 +14,10 @@ class Scanner(Protocol):
 
     name: str
 
+    @classmethod
+    def is_available(cls) -> bool:
+        """Return True when the underlying tool is installed."""
+
     def run(self, path: str) -> list[Finding]:
         """Run the scanner against a path and return normalized findings."""
 

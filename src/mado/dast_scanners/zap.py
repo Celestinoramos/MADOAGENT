@@ -43,8 +43,7 @@ class ZapScanner:
     def run(self, url: str) -> list[Finding]:
         if not docker_available():
             raise RuntimeError(
-                "Docker is required to run OWASP ZAP. Install Docker and pull the "
-                f"'{self.image}' image."
+                f"Docker is required to run OWASP ZAP. Install Docker and pull the '{self.image}' image."
             )
 
         with tempfile.TemporaryDirectory() as workdir:

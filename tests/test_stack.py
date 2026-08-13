@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from mado.config import Config
 from mado.scanners.registry import detect_stack, detect_stack_for_path, select_scanners
 
 
@@ -26,8 +27,23 @@ class StackDetectionTests(unittest.TestCase):
     def test_select_scanners_returns_installed_only(self) -> None:
         stacks = {"python"}
         selected = select_scanners(".", stacks)
-        names = {getattr(scanner, "name") for scanner in selected}
+        names = {scanner.name for scanner in selected}
         self.assertIn("semgrep", names)
+
+    def test_select_scanners_propagates_excludes(self) -> None:
+        config = Config(ignore_paths=[".venv", "vendor/"])
+        selected = select_scanners(".", {"python"}, config)
+        for scanner in selected:
+            if scanner.name in {"semgrep", "bandit"}:
+                self.assertIn(".venv", scanner.exclude)
+                self.assertIn("vendor", scanner.exclude)
+
+    def test_excludes_skip_unsafe_patterns(self) -> None:
+        config = Config(ignore_paths=["/etc", "~/code", "../outside", "tests/"])
+        selected = select_scanners(".", {"python"}, config)
+        for scanner in selected:
+            if scanner.name in {"semgrep", "bandit"}:
+                self.assertEqual(scanner.exclude, ("tests",))
 
 
 if __name__ == "__main__":

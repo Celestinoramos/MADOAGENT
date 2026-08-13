@@ -5,9 +5,35 @@ scanners:
   bandit: true
   gitleaks: true
   dependencies: true
-ignore_paths:
-  - tests/
+ignore_paths:                  # dirs excluded from scans (defaults always apply)
+  - .venv/
+  - .git/
+  - node_modules/
+  - __pycache__/
+  - .mado/
+  - .pytest_cache/
+  - .mypy_cache/
   - vendor/
+code_extensions:               # SAST findings are kept only for these extensions
+  - .py
+  - .js
+  - .ts
+  - .go
+  - .java
+  - .rb
+  - .php
+  - .c
+  - .h
+  - .cc
+  - .cpp
+  - .cs
+  - .rs
+  - .swift
+  - .kt
+  - .html
+  - .vue
+  - .sql
+cache_ttl_days: 30             # reuse cached explanations for this many days (null = forever)
 llm:
   enabled: true                    # set to false to force deterministic explanations
   provider: anthropic

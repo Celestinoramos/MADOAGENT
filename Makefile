@@ -6,15 +6,20 @@ PY := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 
 
-.PHONY: help venv deps install system-install test clean fclean re
+.PHONY: help venv deps dev install system-install scanners test lint format typecheck clean fclean re
 
 help:
 	@echo "Makefile targets:"
 	@echo "  make venv           -> create virtualenv at $(VENV)"
-	@echo "  make deps           -> install project dependencies into venv" 
+	@echo "  make deps           -> install project dependencies into venv"
+	@echo "  make dev            -> install project + dev extras (ruff, mypy, bandit, pip-audit)"
 	@echo "  make install        -> create venv, install deps and install project (editable)"
 	@echo "  make system-install -> install project system-wide (uses current python)"
+	@echo "  make scanners       -> install optional pip scanners (bandit, pip-audit)"
 	@echo "  make test           -> run test suite using venv python"
+	@echo "  make lint           -> run ruff check"
+	@echo "  make format         -> run ruff format"
+	@echo "  make typecheck      -> run mypy on src/"
 	@echo "  make clean          -> remove python build artifacts (pyc, __pycache__, build/, dist/)"
 	@echo "  make fclean         -> full clean + remove venv + uninstall package"
 	@echo "  make re             -> fclean then install"
@@ -27,6 +32,15 @@ deps: venv
 	@echo "Installing dependencies into $(VENV)..."
 	@$(PIP) install --upgrade pip
 	@$(PIP) install -e .
+
+dev: deps
+	@echo "Installing dev extras (ruff, mypy, bandit, pip-audit)..."
+	@$(PIP) install -e ".[dev]"
+
+scanners: dev
+	@echo "Optional pip scanners installed: bandit, pip-audit"
+	@echo "Install gitleaks manually (Go binary): https://github.com/gitleaks/gitleaks"
+	@echo "Install Nuclei manually (Go binary):   https://github.com/projectdiscovery/nuclei"
 
 install: deps
 	@echo "Project installed (editable) in $(VENV)"
@@ -55,8 +69,17 @@ system-install:
 	@python -m pip install --upgrade pip setuptools wheel
 	@python -m pip install -e .
 
-test: deps
+test: dev
 	@$(PY) -m unittest discover -q
+
+lint: dev
+	@$(PY) -m ruff check .
+
+format: dev
+	@$(PY) -m ruff format .
+
+typecheck: dev
+	@$(PY) -m mypy src
 
 addpath:
 	@printf 'export PATH="%s/$(VENV)/bin:\$$PATH"' "$(CURDIR)"

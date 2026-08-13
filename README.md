@@ -19,7 +19,7 @@ Modo dinâmico (mado scan --target): CLI → Orquestrador (Graph) → Recon → 
 
 ## Funcionalidades
 
-- **`mado scan [PATH]`** — análise estática (SAST Semgrep, Bandit para Python, segredos Gitleaks, dependências pip-audit/npm audit), com deteção automática de stack e filtro por severidade/config.
+- **`mado scan [PATH]`** — análise estática (SAST Semgrep, Bandit para Python, segredos Gitleaks, dependências pip-audit/npm audit), com deteção automática de stack, exlusões por defeito (`.venv`, `.git`, `node_modules`, ...), filtro de ficheiros não-code e filtro por severidade/config.
 - **`mado scan [PATH] --diff`** — analisa apenas ficheiros alterados desde o último commit.
 - **`mado scan --target URL [--openapi SPEC] [--postman COLL]`** — modo dinâmico (DAST): confirmação de autorização obrigatória → reconhecimento (OpenAPI/Postman/crawl) → ZAP (Docker) + Nuclei → relatório executivo.
 - **`mado explain FINDING_ID`** — explicação aprofundada de um finding (causa raiz, impacto, severidade, correção).
@@ -36,6 +36,16 @@ python -m pip install -e .
 ```
 
 Para ativar explicações com LLM, define a variável `ANTHROPIC_API_KEY`. Sem ela, o Madó usa o motor determinístico (base de conhecimento local), pelo que a ferramenta funciona offline.
+
+Para desenvolvimento (lint, typecheck, scanners opcionais):
+
+```bash
+make dev            # instala ruff, mypy, bandit, pip-audit
+make lint           # ruff check
+make format         # ruff format
+make typecheck      # mypy src
+make scanners       # instala os scanners pip opcionais (bandit, pip-audit)
+```
 
 ## Uso
 
@@ -67,12 +77,12 @@ Summary by severity
   medium: 1
 
 Madó findings
-┏━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┓
-┃ Severity ┃ File              ┃ Line ┃ Message             ┃
-┡━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━━━━━━━━━━━━┩
-│ HIGH     │ src/app.py         │ 4    │ Avoid shell=True    │
-│ MEDIUM   │ src/app.py         │ 9    │ Hardcoded secret    │
-└──────────┴────────────────────┴──────┴─────────────────────┘
+┏━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┓
+┃ Severity ┃ ID           ┃ File              ┃ Line ┃ Message             ┃
+┡━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━━━━━━━━━━━━┩
+│ HIGH     │ f_8f2a1c9d4e │ src/app.py         │ 4    │ Avoid shell=True    │
+│ MEDIUM   │ f_5b1e7c3a9f │ src/app.py         │ 9    │ Hardcoded secret    │
+└──────────┴──────────────┴────────────────────┴──────┴─────────────────────┘
 ```
 
 ## Configuração `.mado.yml`
@@ -84,9 +94,35 @@ scanners:
   bandit: true
   gitleaks: true
   dependencies: true
-ignore_paths:
-  - tests/
+ignore_paths:                  # dirs excluídas do scan (defaults sempre aplicados)
+  - .venv/
+  - .git/
+  - node_modules/
+  - __pycache__/
+  - .mado/
+  - .pytest_cache/
+  - .mypy_cache/
   - vendor/
+code_extensions:               # findings SAST mantidos só para estas extensões
+  - .py
+  - .js
+  - .ts
+  - .go
+  - .java
+  - .rb
+  - .php
+  - .c
+  - .h
+  - .cc
+  - .cpp
+  - .cs
+  - .rs
+  - .swift
+  - .kt
+  - .html
+  - .vue
+  - .sql
+cache_ttl_days: 30             # reutiliza explicações em cache (null = para sempre)
 llm:
   enabled: true              # false força explicações determinísticas
   provider: anthropic
@@ -115,11 +151,15 @@ src/mado/
 tests/                      # suite unitária
 ```
 
-## Testes
+## Testes e qualidade
 
 ```bash
-make test        # ou: python -m unittest discover -q
+make test           # ou: python -m unittest discover -q
+make lint           # ruff check
+make typecheck      # mypy src
 ```
+
+CI (GitHub Actions, `.github/workflows/ci.yml`) corre ruff + mypy + pytest + auto-scan (`mado scan .`) em cada push/PR.
 
 ## Estado do projeto
 

@@ -45,6 +45,15 @@ class BanditScannerTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Bandit binary not found"):
             BanditScanner().run(".")
 
+    @patch("mado.scanners.bandit.shutil.which", return_value="/usr/bin/bandit")
+    @patch("mado.scanners.bandit.subprocess.run")
+    def test_run_passes_exclude_flag(self, mock_run: object, _mock_which: object) -> None:
+        mock_run.return_value = _CompletedProcess(0, json.dumps({"results": []}))  # type: ignore[assignment]
+        BanditScanner(exclude=(".venv", ".git")).run(".")
+        command = mock_run.call_args.args[0]  # type: ignore[attr-defined]
+        self.assertIn("--exclude", command)
+        self.assertIn(".venv,.git", command)
+
 
 class GitleaksScannerTests(unittest.TestCase):
     @patch("mado.scanners.gitleaks.shutil.which", return_value="/usr/bin/gitleaks")

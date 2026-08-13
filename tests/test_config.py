@@ -14,6 +14,9 @@ class ConfigTests(unittest.TestCase):
         self.assertTrue(config.get_scanner_enabled("semgrep"))
         self.assertTrue(config.llm_enabled)
         self.assertTrue(config.zap_enabled)
+        self.assertIn(".py", config.code_extensions)
+        self.assertEqual(config.cache_ttl_days, 30)
+        self.assertIn(".venv", config.ignore_paths)
 
     def test_from_dict_merges_over_defaults(self) -> None:
         config = Config.from_dict(
@@ -21,6 +24,8 @@ class ConfigTests(unittest.TestCase):
                 "severity_threshold": "high",
                 "scanners": {"bandit": False},
                 "ignore_paths": ["tests/"],
+                "code_extensions": [".py", ".js"],
+                "cache_ttl_days": None,
                 "llm": {"enabled": False},
                 "dast": {"enable_zap": False},
             }
@@ -29,6 +34,8 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(config.get_scanner_enabled("bandit"))
         self.assertTrue(config.get_scanner_enabled("semgrep"))
         self.assertEqual(config.ignore_paths, ["tests/"])
+        self.assertEqual(config.code_extensions, [".py", ".js"])
+        self.assertIsNone(config.cache_ttl_days)
         self.assertFalse(config.llm_enabled)
         self.assertFalse(config.zap_enabled)
 

@@ -18,7 +18,7 @@ from mado.findings.cache import ExplanationCache
 from mado.graph.authorization import require_authorization
 from mado.graph.state import ScanState, Target
 from mado.llm.client import set_llm_enabled
-from mado.orchestrator import run_scan, _filter_and_enrich
+from mado.orchestrator import _filter_and_enrich, run_scan
 from mado.report.models import Report
 
 
@@ -60,7 +60,7 @@ class GraphOrchestrator:
 
             root = Path(target.path).resolve() if target.path else Path.cwd()
             state.findings = _filter_and_enrich(
-                state.findings, config, root, ExplanationCache(root=root)
+                state.findings, config, root, ExplanationCache(root=root, ttl_days=config.cache_ttl_days)
             )
 
         state.report = ReportAgent().compile(target.label, state.findings)

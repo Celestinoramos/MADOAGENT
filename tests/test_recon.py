@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
-from pathlib import Path
 
 from mado.agents.recon import ReconAgent, parse_openapi, parse_postman
 from mado.graph.state import Target

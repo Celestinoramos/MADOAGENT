@@ -97,8 +97,9 @@ def parse_postman(collection_path: str, base_url: str | None = None) -> AttackSu
 
     base_url = base_url or _postman_base_url(payload)
     requests_ = _postman_requests(payload.get("item", []))
-    routes = _join_routes(base_url or "http://localhost", [item["path"] for item in requests_],
-                          [item["method"] for item in requests_])
+    routes = _join_routes(
+        base_url or "http://localhost", [item["path"] for item in requests_], [item["method"] for item in requests_]
+    )
     return AttackSurface(url=base_url or "", routes=routes, source="postman")
 
 

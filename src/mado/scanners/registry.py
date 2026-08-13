@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
 from mado.scanners.bandit import BanditScanner
+from mado.scanners.base import Scanner
 from mado.scanners.dependencies import DependencyScanner, NpmAuditScanner, PipAuditScanner
 from mado.scanners.gitleaks import GitleaksScanner
 from mado.scanners.semgrep import SemgrepScanner
@@ -20,7 +21,7 @@ _STACK_INDICATORS: dict[str, tuple[str, ...]] = {
     "php": ("composer.json",),
 }
 
-_SAST_SCANNERS = {
+_SAST_SCANNERS: dict[str, list[Callable[..., Scanner]]] = {
     "python": [SemgrepScanner, BanditScanner],
     "node": [SemgrepScanner],
     "go": [SemgrepScanner],
@@ -47,7 +48,7 @@ def _indicator_files(target_root: Path) -> list[str]:
     if not target_root.is_dir():
         return []
     names: list[str] = []
-    for stack, indicators in _STACK_INDICATORS.items():
+    for indicators in _STACK_INDICATORS.values():
         for indicator in indicators:
             if (target_root / indicator).exists():
                 names.append(indicator)
@@ -61,7 +62,24 @@ def detect_stack_for_path(path: str) -> set[str]:
     return detect_stack(_indicator_files(root))
 
 
-def select_scanners(path: str, stacks: set[str], config: Any | None = None) -> list[object]:
+def _scanner_excludes(config: Any | None) -> tuple[str, ...]:
+    """Derive scanner-level excludes from the config ignore paths.
+
+    Only safe relative patterns are forwarded to the underlying tools:
+    absolute paths, parent traversal and home references are skipped.
+    """
+    if config is None:
+        return ()
+    excludes: list[str] = []
+    for entry in config.ignore_paths:
+        cleaned = str(entry).strip().rstrip("/")
+        if not cleaned or cleaned.startswith(("/", "~", "..")):
+            continue
+        excludes.append(cleaned)
+    return tuple(excludes)
+
+
+def select_scanners(path: str, stacks: set[str], config: Any | None = None) -> list[Scanner]:
     """Choose the active scanners for the detected stack.
 
     A scanner is included when it applies to the stack (or is universal), is
@@ -73,9 +91,10 @@ def select_scanners(path: str, stacks: set[str], config: Any | None = None) -> l
         root = root.parent
 
     enable_semgrep = bool(config and config.get_scanner_enabled("semgrep")) if config else True
-    enabled: list[object] = []
+    excludes = _scanner_excludes(config)
+    enabled: list[Scanner] = []
     if enable_semgrep and SemgrepScanner.is_available():
-        enabled.append(SemgrepScanner())
+        enabled.append(SemgrepScanner(exclude=excludes))
 
     if GitleaksScanner.is_available():
         enabled.append(GitleaksScanner())
@@ -84,15 +103,12 @@ def select_scanners(path: str, stacks: set[str], config: Any | None = None) -> l
         for scanner_cls in _SAST_SCANNERS.get(stack, []):
             if scanner_cls is SemgrepScanner:
                 continue
-            if scanner_cls.is_available():
-                enabled.append(scanner_cls())
+            scanner = scanner_cls(exclude=excludes)
+            if scanner.is_available():
+                enabled.append(scanner)
 
     dependency_scanners = DependencyScanner.for_stack(stacks)
-    enabled.extend(
-        scanner
-        for scanner in dependency_scanners
-        if scanner.is_available()
-    )
+    enabled.extend(scanner for scanner in dependency_scanners if scanner.is_available())
     return enabled
 
 

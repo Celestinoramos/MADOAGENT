@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from mado.findings.schema import Finding, normalize_severity, severity_rank
 
@@ -33,10 +33,10 @@ class Report:
     target: str
     summary: dict[str, int] = field(default_factory=dict)
     findings: list[Finding] = field(default_factory=list)
-    generated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    generated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     @classmethod
-    def from_findings(cls, target: str, findings: list[Finding]) -> "Report":
+    def from_findings(cls, target: str, findings: list[Finding]) -> Report:
         return cls(target=target, summary=severity_counts(findings), findings=list(findings))
 
     def to_dict(self) -> dict:

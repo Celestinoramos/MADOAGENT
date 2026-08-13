@@ -12,6 +12,13 @@ Requires-Dist: requests>=2.31
 Requires-Dist: anthropic>=0.39
 Requires-Dist: watchdog>=4.0
 Requires-Dist: pytest>=8.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: ruff>=0.6; extra == "dev"
+Requires-Dist: mypy>=1.10; extra == "dev"
+Requires-Dist: types-PyYAML>=6.0; extra == "dev"
+Requires-Dist: bandit>=1.7; extra == "dev"
+Requires-Dist: pip-audit>=2.7; extra == "dev"
 
 # Madó — Agente de Segurança para Desenvolvimento
 ## Desenho de Implementação Completo

@@ -11,9 +11,13 @@ from mado.rag.store import VectorStore
 class VectorStoreTests(unittest.TestCase):
     def test_add_and_search(self) -> None:
         store = VectorStore()
-        store.add([("a", "SQL injection is mixing user input into SQL queries"),
-                   ("b", "hardcoded passwords and api keys are bad secrets"),
-                   ("c", "the weather in lisbon is sunny today")])
+        store.add(
+            [
+                ("a", "SQL injection is mixing user input into SQL queries"),
+                ("b", "hardcoded passwords and api keys are bad secrets"),
+                ("c", "the weather in lisbon is sunny today"),
+            ]
+        )
         hits = store.search("sql injection query", top_k=1)
         self.assertEqual(len(hits), 1)
         self.assertEqual(hits[0]["id"], "a")
@@ -44,7 +48,9 @@ class IngestionTests(unittest.TestCase):
         self.assertTrue(hits)
 
     def test_chunk_documents_split_by_heading(self) -> None:
-        chunks = chunk_documents(["# A\n\n## CWE-89 — SQL Injection\n\nbody text\n\n## CWE-78 — OS Command Injection\n\nmore text\n"])
+        chunks = chunk_documents(
+            ["# A\n\n## CWE-89 — SQL Injection\n\nbody text\n\n## CWE-78 — OS Command Injection\n\nmore text\n"]
+        )
         keys = [key for key, _ in chunks]
         self.assertTrue(any("cwe-89" in key for key in keys))
         self.assertTrue(any("cwe-78" in key for key in keys))

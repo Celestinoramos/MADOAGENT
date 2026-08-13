@@ -13,6 +13,7 @@ from mado.findings.schema import (
     normalize_npm_vuln,
     normalize_pip_audit_vuln,
 )
+from mado.scanners.base import Scanner
 
 _PYTHON_MANIFESTS = ("requirements.txt", "pyproject.toml", "Pipfile", "setup.py")
 _NODE_MANIFESTS = ("package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml")
@@ -55,7 +56,9 @@ class PipAuditScanner:
 
         completed = subprocess.run(command, capture_output=True, text=True)
         if completed.returncode not in (0, 1, 2, 3):
-            details = completed.stderr.strip() or completed.stdout.strip() or "pip-audit exited with an unexpected error"
+            details = (
+                completed.stderr.strip() or completed.stdout.strip() or "pip-audit exited with an unexpected error"
+            )
             raise RuntimeError(f"pip-audit execution failed (exit code {completed.returncode}): {details}")
 
         try:
@@ -95,11 +98,11 @@ class NpmAuditScanner:
         if manifest is None:
             return []
 
-        completed = subprocess.run(
-            ["npm", "audit", "--json"], cwd=str(target), capture_output=True, text=True
-        )
+        completed = subprocess.run(["npm", "audit", "--json"], cwd=str(target), capture_output=True, text=True)
         if completed.returncode not in (0, 1):
-            details = completed.stderr.strip() or completed.stdout.strip() or "npm audit exited with an unexpected error"
+            details = (
+                completed.stderr.strip() or completed.stdout.strip() or "npm audit exited with an unexpected error"
+            )
             raise RuntimeError(f"npm audit execution failed (exit code {completed.returncode}): {details}")
 
         try:
@@ -124,8 +127,8 @@ class DependencyScanner:
     """Dispatch to the right dependency scanner based on the detected stack."""
 
     @staticmethod
-    def for_stack(stacks: set[str]) -> list[object]:
-        scanners: list[object] = []
+    def for_stack(stacks: set[str]) -> list[Scanner]:
+        scanners: list[Scanner] = []
         if "python" in stacks:
             scanners.append(PipAuditScanner())
         if "node" in stacks:

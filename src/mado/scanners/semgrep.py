@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import importlib.util
-from dataclasses import dataclass
 import json
-from pathlib import Path
+import shutil
 import subprocess
 import sys
-import shutil
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from mado.findings.schema import Finding, normalize_semgrep_result
@@ -19,6 +19,7 @@ class SemgrepScanner:
     """Run Semgrep and normalize its JSON output."""
 
     name: str = "semgrep"
+    exclude: tuple[str, ...] = ()
 
     @classmethod
     def is_available(cls) -> bool:
@@ -73,6 +74,8 @@ class SemgrepScanner:
 
         for exclude in self._resolve_excludes(path):
             command.extend(["--exclude", exclude])
+        for pattern in self.exclude:
+            command.extend(["--exclude", pattern])
         command.append(path)
         try:
             completed = subprocess.run(command, capture_output=True, text=True)

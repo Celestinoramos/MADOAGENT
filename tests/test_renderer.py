@@ -59,6 +59,10 @@ class RendererTests(unittest.TestCase):
         self.assertIn("Executive summary", markdown)
         self.assertIn("use parameters", markdown)
 
+    def test_render_markdown_contains_finding_id(self) -> None:
+        markdown = render_findings_markdown([_finding("ERROR")])
+        self.assertIn("**ID:** `f_semgrep_ERROR`", markdown)
+
     def test_render_json_is_valid_and_complete(self) -> None:
         payload = json.loads(render_findings_json([_finding("ERROR")]))
         self.assertEqual(payload["findings"][0]["explanation"]["summary"], "SQL injection summary")

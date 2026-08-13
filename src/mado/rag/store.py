@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable
 
 _TOKEN_RE = re.compile(r"[a-z0-9_]+")
 
@@ -106,7 +106,6 @@ class VectorStore:
     def save(self, path: str) -> None:
         """Persist the store to a JSON file."""
         import json
-
         from pathlib import Path
 
         payload = {"chunks": [{"id": c.id, "text": c.text} for c in self.chunks]}
@@ -114,10 +113,9 @@ class VectorStore:
         Path(path).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
     @classmethod
-    def load(cls, path: str) -> "VectorStore":
+    def load(cls, path: str) -> VectorStore:
         """Load a store previously saved with :meth:`save`."""
         import json
-
         from pathlib import Path
 
         payload = json.loads(Path(path).read_text(encoding="utf-8"))

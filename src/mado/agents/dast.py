@@ -27,7 +27,8 @@ class DastAgent:
         if active_config.zap_enabled:
             if ZapScanner.is_available():
                 try:
-                    findings.extend(ZapScanner(image=active_config.dast.get("zap_image", "zaproxy/zap-stable")).run(url))
+                    image = active_config.dast.get("zap_image", "zaproxy/zap-stable")
+                    findings.extend(ZapScanner(image=image).run(url))
                 except RuntimeError as exc:
                     self.warnings.append(f"[zap] {exc}")
             else:

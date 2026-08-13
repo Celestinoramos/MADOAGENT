@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 from mado.config import Config
-from mado.explanations import explain_finding
 from mado.findings.schema import Finding
 from mado.orchestrator import ScanResult, run_orchestrator, run_scan
 
@@ -76,12 +75,37 @@ class OrchestratorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "app.py").write_text("x = 1\n", encoding="utf-8")
-            from mado.orchestrator import _git_changed_files
 
             with patch("mado.orchestrator._git_changed_files", return_value=[str(root / "app.py")]):
                 scanner = _FakeScanner([_finding("ERROR")])
                 result = run_scan(str(root), diff=True, scanners=[scanner])
                 self.assertEqual(len(result.findings), 1)
+
+    @patch("mado.explanations.engine.llm_enabled", return_value=False)
+    def test_non_code_findings_are_filtered(self, _mock_llm: object) -> None:
+        in_markdown = _finding("ERROR")
+        in_markdown.file = "README.md"
+        config = Config(code_extensions=[".py"])
+        result = run_scan(".", scanners=[_FakeScanner([_finding("ERROR"), in_markdown])], config=config)
+        self.assertEqual(len(result.findings), 1)
+        self.assertEqual(result.findings[0].file, "src/app.py")
+
+    @patch("mado.explanations.engine.llm_enabled", return_value=False)
+    def test_secrets_scanner_exempt_from_code_filter(self, _mock_llm: object) -> None:
+        secret = _finding("ERROR")
+        secret.file = "README.md"
+        secret.scanner = "gitleaks"
+        config = Config(code_extensions=[".py"])
+        result = run_scan(".", scanners=[_FakeScanner([secret])], config=config)
+        self.assertEqual(len(result.findings), 1)
+
+    @patch("mado.explanations.engine.llm_enabled", return_value=False)
+    def test_empty_code_extensions_disables_filter(self, _mock_llm: object) -> None:
+        in_markdown = _finding("ERROR")
+        in_markdown.file = "README.md"
+        config = Config(code_extensions=[])
+        result = run_scan(".", scanners=[_FakeScanner([in_markdown])], config=config)
+        self.assertEqual(len(result.findings), 1)
 
     def test_run_orchestrator_backwards_compat(self) -> None:
         with patch("mado.orchestrator.run_scan") as mock_scan:

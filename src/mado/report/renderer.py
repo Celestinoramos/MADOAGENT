@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from typing import Any
 
 from rich.console import Console
 from rich.table import Table
@@ -34,6 +33,7 @@ def render_findings_terminal(findings: list[Finding]) -> None:
 
     table = Table(title="Madó findings")
     table.add_column("Severity", no_wrap=True)
+    table.add_column("ID", style="cyan", no_wrap=True)
     table.add_column("File", style="white")
     table.add_column("Line", style="white", no_wrap=True)
     table.add_column("Rule", style="white")
@@ -43,6 +43,7 @@ def render_findings_terminal(findings: list[Finding]) -> None:
         severity = normalize_severity(finding.severity_raw)
         table.add_row(
             f"[{_severity_style(severity)}]{severity.upper()}[/{_severity_style(severity)}]",
+            finding.id,
             finding.file,
             str(finding.line) if finding.line is not None else "-",
             finding.rule_id or "-",
@@ -84,7 +85,7 @@ def render_report_terminal(report: Report) -> None:
 def render_report_markdown(report: Report) -> str:
     """Render a compiled report as Markdown."""
     lines: list[str] = [
-        f"# Madó security report",
+        "# Madó security report",
         "",
         f"- **Target:** {report.target}",
         f"- **Generated:** {report.generated_at}",
@@ -112,6 +113,7 @@ def render_report_markdown(report: Report) -> str:
         lines.append(f"### {finding.message_raw}")
         lines.append("")
         lines.append(f"- **Severity:** {normalize_severity(finding.severity_raw)}")
+        lines.append(f"- **ID:** `{finding.id}`")
         lines.append(f"- **Scanner:** {finding.scanner}")
         lines.append(f"- **Location:** `{finding.file}:{finding.line if finding.line is not None else '-'}`")
         if finding.rule_id:
