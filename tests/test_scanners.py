@@ -136,11 +136,6 @@ class NpmAuditScannerTests(unittest.TestCase):
             self.assertEqual(findings[0].scanner, "npm-audit")
             self.assertEqual(findings[0].cwe, "CWE-1321")
 
-
-class NpmAuditScannerTests(unittest.TestCase):
-    @patch("mado.scanners.dependencies.resolve_binary", return_value="/usr/bin/npm")
-    @patch("mado.scanners.dependencies.subprocess.run")
-    def test_run_normalizes_results(self, mock_run: object, _mock_resolve: object) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "package.json").write_text("{}", encoding="utf-8")

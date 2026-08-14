@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -57,7 +57,7 @@ def _classify_framework(root: Path) -> str | None:
     return None
 
 
-def detect_stack(files: Iterable[str]) -> set[str]:
+def detect_stack(files: list[str]) -> set[str]:
     """Return the set of stacks detected from the given files."""
     stacks: set[str] = set()
     for file_path in files:
