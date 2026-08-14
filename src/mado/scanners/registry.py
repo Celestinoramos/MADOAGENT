@@ -31,6 +31,32 @@ _SAST_SCANNERS: dict[str, list[Callable[..., Scanner]]] = {
 }
 
 
+_FRAMEWORK_INDICATORS: dict[str, tuple[str, ...]] = {
+    "django": ("manage.py", "settings.py", "wsgi.py", "asgi.py", "routing.py"),
+    "flask": ("app.py", "wsgi.py", "entry-point.py"),
+    "fastapi": ("main.py",),
+}
+
+
+def _has_framework_indicator(root: Path, framework: str) -> bool:
+    """Check if a framework-specific indicator file exists in the root."""
+    if not root.is_dir():
+        return False
+    for indicator in _FRAMEWORK_INDICATORS.get(framework, ()):
+        indicator_path = root / indicator
+        if indicator_path.exists():
+            return True
+    return False
+
+
+def _classify_framework(root: Path) -> str | None:
+    """Classify the project stack based on framework indicator files."""
+    for framework in _FRAMEWORK_INDICATORS:
+        if _has_framework_indicator(root, framework):
+            return framework
+    return None
+
+
 def detect_stack(files: Iterable[str]) -> set[str]:
     """Return the set of stacks detected from the given files."""
     stacks: set[str] = set()
@@ -39,6 +65,11 @@ def detect_stack(files: Iterable[str]) -> set[str]:
         for stack, indicators in _STACK_INDICATORS.items():
             if name in indicators:
                 stacks.add(stack)
+    # Also classify by framework
+    root = Path(files[0]).resolve() if files else Path.cwd()
+    framework = _classify_framework(root)
+    if framework:
+        stacks.add(framework)
     return stacks
 
 
