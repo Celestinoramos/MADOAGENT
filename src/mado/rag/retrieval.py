@@ -19,15 +19,34 @@ def _get_store() -> VectorStore:
 def retrieve_context(finding: Finding, top_k: int = 3) -> list[str]:
     """Return the most relevant OWASP/CWE chunks for a finding.
 
-    The query is built from the finding's semantic key (CWE id + rule id),
-    falling back to the raw message when neither is present.
-    """
+    Uses multiple queries (CWE + rule_id, language + rule_id, severity + cwe)
+    to improve retrieval coverage, then deduplicates results.
 
+    The CWE-based query is always included first to ensure core relevance.
+    """
     store = _get_store()
-    parts = [part for part in (finding.cwe, finding.rule_id) if part]
-    query = " ".join(parts) if parts else finding.message_raw
-    hits = store.search(query, top_k=top_k)
-    return [hit["text"] for hit in hits]
+    # Always include the CWE-based query as the primary context
+    primary_query = f"{finding.cwe} {finding.rule_id}"
+    primary_hits = store.search(primary_query, top_k=top_k)
+
+    # Collect additional queries for coverage expansion
+    lang = getattr(finding, "language", "") or ""
+    severity = getattr(finding, "severity_raw", "") or ""
+    queries = [
+        f"{lang} {finding.rule_id}",
+        f"{severity} {finding.cwe}",
+    ]
+    all_hits: list[str] = [hit["text"] for hit in primary_hits]
+    seen: set[str] = {hit["text"] for hit in primary_hits}
+
+    for query in queries:
+        hits = store.search(query, top_k=top_k)
+        for hit in hits:
+            hit_text = hit["text"]
+            if hit_text not in seen:
+                seen.add(hit_text)
+                all_hits.append(hit_text)
+    return all_hits[:top_k]
 
 
 def build_query(cwe: str | None, rule_id: str | None) -> str:
