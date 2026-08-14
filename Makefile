@@ -2,7 +2,8 @@ SHELL := /bin/bash
 
 # Virtual environment location (override with VENV=path)
 VENV ?= .venv
-PY := $(VENV)/bin/python
+PYTHON ?= python3
+PY := $(VENV)/bin/$(PYTHON)
 PIP := $(VENV)/bin/pip
 
 
@@ -25,7 +26,7 @@ help:
 	@echo "  make re             -> fclean then install"
 
 venv:
-	@test -d $(VENV) || python -m venv $(VENV)
+	@test -d $(VENV) || $(PYTHON) -m venv $(VENV)
 	@$(PY) -m pip install --upgrade pip setuptools wheel
 
 deps: venv
