@@ -1,7 +1,7 @@
 """LLM client used to generate structured explanations for findings.
 
-The client is lazy: if the Anthropic SDK is available and an API key is
-configured (``ANTHROPIC_API_KEY``), it calls the model. Otherwise
+The client is lazy: if the Groq SDK is available and an API key is
+configured (``GROQ_API_KEY``), it calls the model. Otherwise
 :meth:`available` returns ``False`` and the caller should fall back to the
 deterministic knowledge base. The env var ``MADO_LLM_PROVIDER`` can be set to
 ``"none"`` to force the fallback even when a key exists.
@@ -17,7 +17,7 @@ from mado.findings.schema import Finding
 from mado.llm.prompts import SYSTEM_PROMPT, build_user_prompt
 from mado.rag.retrieval import retrieve_context
 
-_DEFAULT_MODEL = "claude-sonnet-4-5"
+_DEFAULT_MODEL = "mixtral-8x7b-32768"
 _LLM_OVERRIDE: bool | None = None
 _LLM_MODEL_OVERRIDE: str | None = None
 
@@ -40,21 +40,21 @@ def llm_enabled() -> bool:
         return False
     if os.environ.get("MADO_LLM_PROVIDER", "").lower() == "none":
         return False
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    if not os.environ.get("GROQ_API_KEY"):
         return False
     try:
-        import anthropic  # noqa: F401
+        from groq import Groq  # noqa: F401
     except ImportError:
         return False
     return True
 
 
 class LlmClient:
-    """Thin wrapper around the Anthropic SDK that returns structured JSON."""
+    """Thin wrapper around the Groq SDK that returns structured JSON."""
 
     def __init__(self, model: str | None = None, api_key: str | None = None) -> None:
         self.model = model or _LLM_MODEL_OVERRIDE or _DEFAULT_MODEL
-        self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
+        self.api_key = api_key or os.environ.get("GROQ_API_KEY")
         self._client: Any | None = None
 
     def __repr__(self) -> str:
@@ -67,9 +67,9 @@ class LlmClient:
 
     def _get_client(self) -> Any:
         if self._client is None:
-            import anthropic
+            from groq import Groq
 
-            self._client = anthropic.Anthropic(api_key=self.api_key)
+            self._client = Groq(api_key=self.api_key)
         return self._client
 
     def explain(self, finding: Finding, retrieved_context: list[str] | None = None) -> dict[str, Any] | None:
@@ -93,7 +93,7 @@ class LlmClient:
         )
 
         try:
-            response = self._get_client().messages.create(
+            response = self._get_client().chat.completions.create(
                 model=self.model,
                 max_tokens=1024,
                 system=SYSTEM_PROMPT,

@@ -59,8 +59,8 @@ DEFAULT_CODE_EXTENSIONS = [
 
 DEFAULT_LLM = {
     "enabled": True,
-    "provider": "anthropic",
-    "model": "claude-sonnet-4-5",
+    "provider": "groq",
+    "model": "mixtral-8x7b-32768",
 }
 
 DEFAULT_DAST = {
@@ -242,7 +242,7 @@ cache_ttl_days: 30          # reuse cached explanations for this many days (null
 llm:
   enabled: true                    # set to false to force deterministic explanations
   provider: anthropic
-  model: claude-sonnet-4-5         # a chave vai em ANTHROPIC_API_KEY (env ou .env), nunca aqui
+  model: mixtral-8x7b-32768        # a chave vai em GROQ_API_KEY (env ou .env), nunca aqui
 dast:
   enable_zap: true
   enable_nuclei: true

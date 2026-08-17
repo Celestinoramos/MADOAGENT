@@ -1,6 +1,6 @@
 """Minimal local ``.env`` loader for secrets (zero dependencies).
 
-Used to read ``ANTHROPIC_API_KEY`` (and any other local variable) from a
+Used to read LLM API keys (``ANTHROPIC_API_KEY``, ``GROQ_API_KEY``, etc.) from a
 ``.env`` file at the project root, so secrets never need to live in the
 repository or in the scanned code. Real environment variables always win
 over values in the file.

@@ -9,16 +9,16 @@ from mado.llm.prompts import SYSTEM_PROMPT, build_user_prompt
 
 class LlmClientTests(unittest.TestCase):
     def setUp(self) -> None:
-        self._old_key = os.environ.get("ANTHROPIC_API_KEY")
+        self._old_key = os.environ.get("GROQ_API_KEY")
         self._old_provider = os.environ.get("MADO_LLM_PROVIDER")
         set_llm_enabled(None)
         set_llm_model(None)
 
     def tearDown(self) -> None:
         if self._old_key is None:
-            os.environ.pop("ANTHROPIC_API_KEY", None)
+            os.environ.pop("GROQ_API_KEY", None)
         else:
-            os.environ["ANTHROPIC_API_KEY"] = self._old_key
+            os.environ["GROQ_API_KEY"] = self._old_key
         if self._old_provider is None:
             os.environ.pop("MADO_LLM_PROVIDER", None)
         else:
@@ -27,11 +27,11 @@ class LlmClientTests(unittest.TestCase):
         set_llm_model(None)
 
     def test_disabled_without_api_key(self) -> None:
-        os.environ.pop("ANTHROPIC_API_KEY", None)
+        os.environ.pop("GROQ_API_KEY", None)
         self.assertFalse(llm_enabled())
 
     def test_override_can_force_disable(self) -> None:
-        os.environ["ANTHROPIC_API_KEY"] = "test-key"
+        os.environ["GROQ_API_KEY"] = "test-key"
         set_llm_enabled(False)
         self.assertFalse(llm_enabled())
 
@@ -41,7 +41,7 @@ class LlmClientTests(unittest.TestCase):
         self.assertEqual(client.model, "claude-3-7-sonnet")
 
     def test_repr_masks_api_key(self) -> None:
-        os.environ["ANTHROPIC_API_KEY"] = "sk-ant-super-secret"
+        os.environ["GROQ_API_KEY"] = "sk-ant-super-secret"
         client = LlmClient()
         rendered = repr(client)
         self.assertNotIn("sk-ant-super-secret", rendered)
