@@ -12,10 +12,14 @@ from rich.console import Console
 
 from mado.config import Config, load_config, load_config_file, render_example_config
 from mado.explanations import explain_finding
+from mado.explanations.knowledge_base import lookup_entry
 from mado.findings.ignore import IgnoreList
+from mado.findings.schema import Finding
 from mado.graph.graph_orchestrator import GraphOrchestrator
 from mado.graph.state import AbortScan, Target
 from mado.orchestrator import run_scan
+from mado.rag.retrieval import retrieve_context
+from mado.llm.client import LlmClient, llm_enabled
 from mado.report.models import Report
 from mado.report.renderer import (
     render_report_json,
@@ -176,6 +180,107 @@ def explain(
         console.print("[bold]References[/bold]")
         for reference in explanation.references:
             console.print(f"- {reference}")
+
+
+@app.command()
+def ask(
+    question: str = typer.Argument(..., help="Question about detected vulnerabilities"),
+    finding_id: str | None = typer.Option(
+        None, "--finding", help="Explain a specific finding by ID (requires scan first)"
+    ),
+    path: Path = typer.Option(Path("."), "--path", exists=True, file_okay=True, dir_okay=True, readable=True),
+) -> None:
+    """Ask a question about detected vulnerabilities, answered via RAG or LLM."""
+
+    if finding_id:
+        try:
+            result = run_scan(str(path))
+        except RuntimeError as exc:
+            error_console.print(f"[red]error:[/red] {exc}")
+            raise typer.Exit(code=1) from exc
+
+        _print_warnings(result.warnings)
+
+        finding = next((item for item in result.findings if item.id == finding_id), None)
+        if finding is None:
+            error_console.print(f"Finding {finding_id} not found under {path}")
+            raise typer.Exit(code=1)
+
+        explanation = explain_finding(finding)
+        console.print(f"[bold]Finding[/bold] {finding.id}")
+        console.print(f"[bold]Question[/bold] {question}")
+        console.print(f"[bold]Summary[/bold] {explanation.summary}")
+        console.print(f"[bold]Root cause[/bold] {explanation.root_cause}")
+        console.print(f"[bold]Impact[/bold] {explanation.impact}")
+        console.print(f"[bold]Severity[/bold] {explanation.severity}")
+        console.print(f"[bold]Remediation[/bold] {explanation.remediation}")
+
+        if explanation.references:
+            console.print("[bold]References[/bold]")
+            for reference in explanation.references:
+                console.print(f"- {reference}")
+        return
+
+    # General question - use RAG + LLM
+    try:
+        result = run_scan(str(path))
+    except RuntimeError as exc:
+        error_console.print(f"[red]error:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    _print_warnings(result.warnings)
+
+    if not result.findings:
+        error_console.print("[red]error:[/red] No findings detected. Run a scan first or provide --finding.")
+        raise typer.Exit(code=1)
+
+    # Use the first finding's context for the answer
+    finding = result.findings[0]
+    context = retrieve_context(finding)
+
+    if llm_enabled():
+        client = LlmClient()
+        user_prompt = f"""Question: {question}
+
+Finding context:
+- Rule ID: {finding.rule_id or '-'}
+- CWE: {finding.cwe or '-'}
+- Severity: {finding.severity_raw}
+- Message: {finding.message_raw}
+
+Relevant OWASP/CWE context:
+{chr(10).join(f'- {c}' for c in context)}
+
+Please answer the question based on the above finding context."""
+        try:
+            response = client._get_client().messages.create(
+                model=client.model,
+                max_tokens=1024,
+                system="""You are a security expert helping a developer understand a vulnerability. 
+Provide a clear, concise answer based on the provided context. If the context doesn't contain the answer, 
+say you don't have enough information rather than making things up.""",
+                messages=[{"role": "user", "content": user_prompt}],
+            )
+        except Exception:
+            error_console.print("[red]error:[/red] Failed to get LLM response.")
+            raise typer.Exit(code=1) from exc
+
+        text = "".join(
+            block.text for block in response.content if getattr(block, "type", "") == "text"
+        )
+        console.print(f"[bold]Answer[/bold] {text}")
+    else:
+        # Fall back to knowledge base
+        entry = lookup_entry(finding.cwe, finding.rule_id)
+        console.print(f"[bold]Answer[/bold]")
+        console.print(f"Summary: {entry.summary}")
+        console.print(f"Root cause: {entry.root_cause}")
+        console.print(f"Impact: {entry.impact}")
+        console.print(f"Remediation: {entry.remediation}")
+        if entry.references:
+            console.print("[bold]References[/bold]")
+            for ref in entry.references:
+                console.print(f"- {ref}")
 
 
 @app.command()
