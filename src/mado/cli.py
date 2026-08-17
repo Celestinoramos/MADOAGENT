@@ -14,12 +14,11 @@ from mado.config import Config, load_config, load_config_file, render_example_co
 from mado.explanations import explain_finding
 from mado.explanations.knowledge_base import lookup_entry
 from mado.findings.ignore import IgnoreList
-from mado.findings.schema import Finding
 from mado.graph.graph_orchestrator import GraphOrchestrator
 from mado.graph.state import AbortScan, Target
+from mado.llm.client import LlmClient, llm_enabled
 from mado.orchestrator import run_scan
 from mado.rag.retrieval import retrieve_context
-from mado.llm.client import LlmClient, llm_enabled
 from mado.report.models import Report
 from mado.report.renderer import (
     render_report_json,
@@ -256,12 +255,12 @@ Please answer the question based on the above finding context."""
             response = client._get_client().messages.create(
                 model=client.model,
                 max_tokens=1024,
-                system="""You are a security expert helping a developer understand a vulnerability. 
-Provide a clear, concise answer based on the provided context. If the context doesn't contain the answer, 
+                system="""You are a security expert helping a developer understand a vulnerability.
+Provide a clear, concise answer based on the provided context. If the context doesn't contain the answer,
 say you don't have enough information rather than making things up.""",
                 messages=[{"role": "user", "content": user_prompt}],
             )
-        except Exception:
+        except Exception as exc:
             error_console.print("[red]error:[/red] Failed to get LLM response.")
             raise typer.Exit(code=1) from exc
 
@@ -272,7 +271,7 @@ say you don't have enough information rather than making things up.""",
     else:
         # Fall back to knowledge base
         entry = lookup_entry(finding.cwe, finding.rule_id)
-        console.print(f"[bold]Answer[/bold]")
+        console.print("[bold]Answer[/bold]")
         console.print(f"Summary: {entry.summary}")
         console.print(f"Root cause: {entry.root_cause}")
         console.print(f"Impact: {entry.impact}")
