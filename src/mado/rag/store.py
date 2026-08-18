@@ -84,7 +84,7 @@ class VectorStore:
                 # Text-based embedding: TF-IDF path, embedding computed incrementally
                 chunk = _Chunk(id=chunk_id, text=data, embedding=None)
             elif isinstance(data, (list, np.ndarray)):
-                vec = np.asarray(data, dtype="float32") if not isinstance(data, np.ndarray) else np.asarray(data, dtype="float32")
+                vec = np.asarray(data, dtype="float32")
                 if vec.ndim != 1 or vec.shape[0] != self._embedding_dim:
                     raise ValueError(
                         f"Embedding dimension must be {self._embedding_dim}, got {vec.shape}"
@@ -164,7 +164,10 @@ class VectorStore:
             if chunk_vec is None:
                 continue
             # Compute dot product for dict-based TF-IDF vectors
-            dot = sum(query_vec.get(token, 0.0) * chunk_vec.get(token, 0.0) for token in set(query_vec) | set(chunk_vec))
+            shared_tokens = set(query_vec) | set(chunk_vec)
+            dot = sum(
+                query_vec.get(token, 0.0) * chunk_vec.get(token, 0.0) for token in shared_tokens
+            )
             norm_q = math.sqrt(sum(w * w for w in query_vec.values())) if query_vec else 0.0
             norm_c = math.sqrt(sum(w * w for w in chunk_vec.values()))
             if norm_q == 0 or norm_c == 0:
