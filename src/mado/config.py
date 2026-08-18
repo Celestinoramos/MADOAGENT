@@ -1,10 +1,23 @@
-"""Configuration loading for ``.mado.yml``."""
+"""Configuration loading for ``.mado.yml``.
+
+Pydantic is used for configuration validation, ensuring that values like
+``severity_threshold`` are always valid options.
+"""
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from pydantic import BaseModel, Field, validator
+
+_LOGGER = logging.getLogger(__name__)
+
+_VALID_SEVERITY_LEVELS = {"low", "medium", "high", "critical"}
+
+CONFIG_FILENAME = ".mado.yml"
 
 _DEFAULT_SCANNERS = {
     "semgrep": True,
@@ -69,78 +82,19 @@ DEFAULT_DAST = {
     "zap_image": "zaproxy/zap-stable",
 }
 
-CONFIG_FILENAME = ".mado.yml"
 
+class _ConfigBase(BaseModel):
+    """Base config model with Pydantic validation."""
 
-@dataclass(slots=True)
-class Config:
-    """Merged configuration with defaults for every missing key."""
+    severity_threshold: str = Field("low", description="Minimum severity (low|medium|high|critical)")
 
-    severity_threshold: str = "low"
-    scanners: dict[str, bool] = field(default_factory=lambda: dict(_DEFAULT_SCANNERS))
-    ignore_paths: list[str] = field(default_factory=lambda: list(DEFAULT_IGNORE_PATHS))
-    code_extensions: list[str] = field(default_factory=lambda: list(DEFAULT_CODE_EXTENSIONS))
-    cache_ttl_days: int | None = 30
-    llm: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_LLM))
-    dast: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_DAST))
-    source_path: str | None = None
-
-    @classmethod
-    def from_dict(cls, raw: dict[str, Any], source_path: str | None = None) -> Config:
-        """Build a config from a loaded YAML dict, applying defaults."""
-
-        scanners = dict(_DEFAULT_SCANNERS)
-        raw_scanners = raw.get("scanners", {})
-        if isinstance(raw_scanners, dict):
-            for name, enabled in raw_scanners.items():
-                scanners[str(name)] = bool(enabled)
-
-        llm = dict(DEFAULT_LLM)
-        raw_llm = raw.get("llm", {})
-        if isinstance(raw_llm, dict):
-            llm.update({str(k): v for k, v in raw_llm.items()})
-
-        dast = dict(DEFAULT_DAST)
-        raw_dast = raw.get("dast", {})
-        if isinstance(raw_dast, dict):
-            dast.update({str(k): v for k, v in raw_dast.items()})
-
-        ignore_paths = raw.get("ignore_paths")
-        if not isinstance(ignore_paths, list):
-            ignore_paths = list(DEFAULT_IGNORE_PATHS)
-
-        code_extensions = raw.get("code_extensions")
-        if not isinstance(code_extensions, list):
-            code_extensions = list(DEFAULT_CODE_EXTENSIONS)
-
-        cache_ttl = raw.get("cache_ttl_days", 30)
-        cache_ttl_days: int | None = None if cache_ttl is None else max(int(cache_ttl), 0)
-
-        return cls(
-            severity_threshold=str(raw.get("severity_threshold", "low")),
-            scanners=scanners,
-            ignore_paths=[str(item) for item in ignore_paths],
-            code_extensions=[str(extension) for extension in code_extensions],
-            cache_ttl_days=cache_ttl_days,
-            llm=llm,
-            dast=dast,
-            source_path=source_path,
-        )
-
-    def get_scanner_enabled(self, name: str) -> bool:
-        return bool(self.scanners.get(name, True))
-
-    @property
-    def llm_enabled(self) -> bool:
-        return bool(self.llm.get("enabled", True))
-
-    @property
-    def zap_enabled(self) -> bool:
-        return bool(self.dast.get("enable_zap", True))
-
-    @property
-    def nuclei_enabled(self) -> bool:
-        return bool(self.dast.get("enable_nuclei", True))
+    @validator("severity_threshold")
+    def _validate_severity_threshold(cls, v: str) -> str:
+        if v not in _VALID_SEVERITY_LEVELS:
+            raise ValueError(
+                f"Invalid severity_threshold: {v}. Must be one of {_VALID_SEVERITY_LEVELS}"
+            )
+        return v
 
 
 def find_config_file(root: str | Path | None = None) -> Path | None:
@@ -238,6 +192,7 @@ code_extensions:              # SAST findings are kept only for these extensions
   - .html
   - .vue
   - .sql
+  - .css
 cache_ttl_days: 30          # reuse cached explanations for this many days (null = forever)
 llm:
   enabled: true                    # set to false to force deterministic explanations
@@ -248,3 +203,81 @@ dast:
   enable_nuclei: true
   zap_image: zaproxy/zap-stable
 """
+
+
+@dataclass(slots=True)
+class Config:
+    """Merged configuration with defaults for every missing key."""
+
+    severity_threshold: str = "low"
+    scanners: dict[str, bool] = field(default_factory=lambda: dict(_DEFAULT_SCANNERS))
+    ignore_paths: list[str] = field(default_factory=lambda: list(DEFAULT_IGNORE_PATHS))
+    code_extensions: list[str] = field(default_factory=lambda: list(DEFAULT_CODE_EXTENSIONS))
+    cache_ttl_days: int | None = 30
+    llm: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_LLM))
+    dast: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_DAST))
+    source_path: str | None = None
+
+    @property
+    def llm_enabled(self) -> bool:
+        return bool(self.llm.get("enabled", True))
+
+    def get_scanner_enabled(self, name: str) -> bool:
+        """Check whether a scanner is enabled in the configuration."""
+        return bool(self.scanners.get(name, False))
+
+    @property
+    def zap_enabled(self) -> bool:
+        """Whether ZAP dynamic scanning is enabled."""
+        return bool(self.dast.get("enable_zap", True))
+
+    @property
+    def nuclei_enabled(self) -> bool:
+        """Whether Nuclei dynamic scanning is enabled."""
+        return bool(self.dast.get("enable_nuclei", True))
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any], source_path: str | None = None) -> Config:
+        """Build a config from a loaded YAML dict, applying defaults."""
+
+        # Validate severity_threshold using Pydantic
+        base = _ConfigBase(**{"severity_threshold": raw.get("severity_threshold", "low")})
+        severity_threshold = base.severity_threshold
+
+        scanners = dict(_DEFAULT_SCANNERS)
+        raw_scanners = raw.get("scanners", {})
+        if isinstance(raw_scanners, dict):
+            for name, enabled in raw_scanners.items():
+                scanners[str(name)] = bool(enabled)
+
+        llm = dict(DEFAULT_LLM)
+        raw_llm = raw.get("llm", {})
+        if isinstance(raw_llm, dict):
+            llm.update({str(k): v for k, v in raw_llm.items()})
+
+        dast = dict(DEFAULT_DAST)
+        raw_dast = raw.get("dast", {})
+        if isinstance(raw_dast, dict):
+            dast.update({str(k): v for k, v in raw_dast.items()})
+
+        ignore_paths = raw.get("ignore_paths")
+        if not isinstance(ignore_paths, list):
+            ignore_paths = list(DEFAULT_IGNORE_PATHS)
+
+        code_extensions = raw.get("code_extensions")
+        if not isinstance(code_extensions, list):
+            code_extensions = list(DEFAULT_CODE_EXTENSIONS)
+
+        cache_ttl = raw.get("cache_ttl_days", 30)
+        cache_ttl_days: int | None = None if cache_ttl is None else max(int(cache_ttl), 0)
+
+        return cls(
+            severity_threshold=str(severity_threshold),
+            scanners=scanners,
+            ignore_paths=[str(item) for item in ignore_paths],
+            code_extensions=[str(extension) for extension in code_extensions],
+            cache_ttl_days=cache_ttl_days,
+            llm=llm,
+            dast=dast,
+            source_path=source_path,
+        )

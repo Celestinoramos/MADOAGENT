@@ -7,6 +7,7 @@ Both modes converge on the same Findings -> RAG -> LLM pipeline.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from pathlib import Path
 
@@ -40,6 +41,7 @@ class GraphOrchestrator:
         self,
         target: Target,
         confirm_prompt: Callable[[str], str] | None = None,
+        yes_i_accept_risks: bool = False,
     ) -> Report:
         """Run the appropriate mode(s) for the target and return a report."""
         config = self._resolve_config(target)
@@ -55,7 +57,11 @@ class GraphOrchestrator:
             state.warnings.extend(result.warnings)
 
         if target.is_running_app:
-            require_authorization(target, confirm_prompt)
+            if yes_i_accept_risks:
+                _logger = logging.getLogger(__name__)
+                _logger.warning("Bypassing authorization guardrail (--yes-i-accept-risks)")
+            else:
+                require_authorization(target, confirm_prompt)
             state.attack_surface = ReconAgent().map_surface(target)
             dast = DastAgent()
             state.findings.extend(dast.scan(state.attack_surface, target, config))

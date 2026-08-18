@@ -71,6 +71,18 @@ class OrchestratorTests(unittest.TestCase):
         self.assertTrue(any("boom" in warning for warning in result.warnings))
 
     @patch("mado.explanations.engine.llm_enabled", return_value=False)
+    def test_scanner_exception_becomes_warning(self, _mock_llm: object) -> None:
+        class _CrashScanner:
+            name = "crash"
+
+            def run(self, path: str) -> list[Finding]:
+                raise ValueError("unexpected error")
+
+        result = run_scan(".", scanners=[_CrashScanner()])
+        self.assertEqual(result.findings, [])
+        self.assertTrue(any("crash" in warning for warning in result.warnings))
+
+    @patch("mado.explanations.engine.llm_enabled", return_value=False)
     def test_diff_mode_runs_per_changed_file(self, _mock_llm: object) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

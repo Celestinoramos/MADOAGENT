@@ -36,8 +36,8 @@ code_extensions:               # SAST findings are kept only for these extension
 cache_ttl_days: 30             # reuse cached explanations for this many days (null = forever)
 llm:
   enabled: true                    # set to false to force deterministic explanations
-  provider: anthropic
-  model: claude-sonnet-4-5
+  provider: groq
+  model: mixtral-8x7b-32768        # a chave vai em GROQ_API_KEY (env ou .env), nunca aqui
 dast:
   enable_zap: true
   enable_nuclei: true

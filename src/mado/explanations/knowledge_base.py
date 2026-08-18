@@ -75,6 +75,104 @@ def _match_by_rule(rule_id: str | None) -> KnowledgeEntry | None:
     return None
 
 
+def expand_kb() -> None:
+    """Expand the local knowledge base with additional CWE entries.
+
+    This function can be called at initialization to populate the KB with
+    more CWE entries beyond the bundled defaults.  The entries are added
+    directly to ``_KB_BY_CWE`` and ``_KB_BY_KEYWORD`` so that subsequent
+    ``lookup_entry`` calls find them immediately.
+    """
+
+    additional_cwes = [
+        {
+            "cwe_id": "CWE-20",
+            "summary": "Improper input validation occurs when input is not validated before being used.",
+            "root_cause": "The application does not validate or sanitize user input before processing.",
+            "impact": "Attacker can send malicious data that alters the expected behavior of the application.",
+            "remediation": "Validate all input against a whitelist of acceptable values; use type checking and length constraints.",
+            "references": (
+                "https://cwe.mitre.org/data/definitions/20.html",
+                "https://owasp.org/www-community/attacks/Input_validation_cheat_sheet",
+            ),
+        },
+        {
+            "cwe_id": "CWE-352",
+            "summary": "Cross-Site Request Forgery (CSRF) does not verify the intent of a request.",
+            "root_cause": "The application does not verify that a request was intentionally initiated by the user.",
+            "impact": "An attacker can forge authenticated requests that act on behalf of a victim user.",
+            "remediation": "Use anti-CSRF tokens, SameSite cookie flags, and verify request origins.",
+            "references": (
+                "https://cwe.mitre.org/data/definitions/352.html",
+                "https://owasp.org/www-community/attacks/csrf",
+            ),
+        },
+        {
+            "cwe_id": "CWE-79",
+            "summary": "Cross-Site Scripting (XSS) does not sanitize untrusted output before including it in a web page.",
+            "root_cause": "Untrusted data is included in a web page without proper escaping.",
+            "impact": "Attacker can execute arbitrary JavaScript in the victim's browser, leading to session hijacking or defacement.",
+            "remediation": "Escape all untrusted output based on the output context (HTML, JavaScript, CSS, URL).",
+            "references": (
+                "https://cwe.mitre.org/data/definitions/79.html",
+                "https://owasp.org/www-community/xss-attacks",
+            ),
+        },
+        {
+            "cwe_id": "CWE-89",
+        },
+        {
+            "cwe_id": "CWE-798",
+        },
+    ]
+
+    for entry_data in additional_cwes:
+        cwe_id = entry_data.get("cwe_id")
+        if not cwe_id:
+            continue
+
+        # Skip if already exists
+        if cwe_id in _KB_BY_CWE:
+            continue
+
+        entry = KnowledgeEntry(
+            summary=entry_data.get("summary", ""),
+            root_cause=entry_data.get("root_cause", ""),
+            impact=entry_data.get("impact", ""),
+            remediation=entry_data.get("remediation", ""),
+            references=tuple(entry_data.get("references", ())),
+        )
+        _KB_BY_CWE[cwe_id] = entry
+
+        # Also add keyword mappings for common lowercase lookups
+        keyword = cwe_id.lower().replace("cwe-", "")
+        _KB_BY_KEYWORD[keyword] = entry
+
+
+def expand_kb(additional_cwes: list[dict] | None = None) -> None:
+    """Expand the local knowledge base with additional CWE entries.
+
+    Accepts a list of dicts with keys: cwe_id, description, summary,
+    root_cause, impact, remediation, references (tuple or list).
+    Each entry is added to ``_KB_BY_CWE`` keyed by ``cwe_id``.
+    """
+    if additional_cwes is None:
+        additional_cwes = []
+
+    for entry in additional_cwes:
+        cwe_id = entry.get("cwe_id", "").strip().upper()
+        if not cwe_id or cwe_id in _KB_BY_CWE:
+            continue
+        kb_entry = KnowledgeEntry(
+            summary=entry.get("summary", ""),
+            root_cause=entry.get("root_cause", ""),
+            impact=entry.get("impact", ""),
+            remediation=entry.get("remediation", ""),
+            references=tuple(entry.get("references", [])),
+        )
+        _KB_BY_CWE[cwe_id] = kb_entry
+
+
 def lookup_entry(cwe: str | None, rule_id: str | None) -> KnowledgeEntry:
     """Return the best matching knowledge base entry for a finding."""
 

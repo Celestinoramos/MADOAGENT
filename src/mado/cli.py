@@ -66,6 +66,9 @@ def scan(
     config_path: str = typer.Option(None, "--config", help="Explicit path to a .mado.yml file"),
     output: str = typer.Option(None, "--output", help="Write the report to a file"),
     watch: bool = typer.Option(False, "--watch", help="Watch the project and re-scan on changes"),
+    yes_i_accept_risks: bool = typer.Option(
+        False, "--yes-i-accept-risks", help="Bypass authorization guardrails (CI/CD mode)"
+    ),
 ) -> None:
     """Scan a project (static) or a running application (dynamic)."""
 
@@ -74,7 +77,7 @@ def scan(
 
     try:
         if target is not None:
-            report = _scan_dynamic(target, openapi, postman, config_path)
+            report = _scan_dynamic(target, openapi, postman, config_path, yes_i_accept_risks)
         elif watch:
             _scan_watch(str(path), severity=severity, config_path=config_path)
             return
@@ -120,7 +123,13 @@ def _scan_static(path: str, diff: bool, severity: str | None, config_path: str |
     return Report.from_findings(Path(path).resolve().name, result.findings)
 
 
-def _scan_dynamic(target_url: str, openapi: str | None, postman: str | None, config_path: str | None) -> Report:
+def _scan_dynamic(
+    target_url: str,
+    openapi: str | None,
+    postman: str | None,
+    config_path: str | None,
+    yes_i_accept_risks: bool = False,
+) -> Report:
     target = Target(
         url=target_url,
         openapi_spec=openapi,
@@ -129,7 +138,7 @@ def _scan_dynamic(target_url: str, openapi: str | None, postman: str | None, con
     orchestrator = GraphOrchestrator()
     if config_path:
         orchestrator.config = load_config_file(config_path)
-    report = orchestrator.run(target)
+    report = orchestrator.run(target, yes_i_accept_risks=yes_i_accept_risks)
     _print_warnings(orchestrator.last_warnings)
     return report
 

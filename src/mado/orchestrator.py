@@ -173,7 +173,7 @@ def run_scan(
                     findings.extend(scanner.run(file_path))
             else:
                 findings.extend(scanner.run(path))
-        except RuntimeError as exc:
+        except (RuntimeError, ValueError) as exc:
             warnings.append(f"[{scanner.name}] {exc}")
         except FileNotFoundError as exc:
             warnings.append(f"[{scanner.name}] {exc}")

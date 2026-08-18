@@ -37,7 +37,7 @@ def render_findings_terminal(findings: list[Finding]) -> None:
     table.add_column("File", style="white")
     table.add_column("Line", style="white", no_wrap=True)
     table.add_column("Rule", style="white")
-    table.add_column("Message", style="white")
+    table.add_column("Message", style="white", no_wrap=True)
 
     for finding in findings:
         severity = normalize_severity(finding.severity_raw)

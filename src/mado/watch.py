@@ -3,10 +3,16 @@
 Uses ``watchdog`` to observe a project directory and re-trigger a ``--diff``
 scan after a short quiet period, giving near-real-time feedback while the
 developer edits code.
+
+Logging:
+  - Errors during scan are logged via ``logging``.
+  - Observer startup/shutdown events are logged.
+  - Debounce events are logged at debug level.
 """
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from collections.abc import Callable
@@ -26,6 +32,8 @@ DEFAULT_IGNORE_SEGMENTS = (
     ".mypy_cache",
     ".coverage",
 )
+
+_logger = logging.getLogger(__name__)
 
 
 def should_ignore_event(path: str, ignore_segments: tuple[str, ...] = DEFAULT_IGNORE_SEGMENTS) -> bool:
@@ -64,14 +72,19 @@ class DebouncedHandler(FileSystemEventHandler):
     def _schedule(self) -> None:
         with self._lock:
             if self._timer is not None:
+                _logger.debug("Cancelling previous debounce timer")
                 self._timer.cancel()
+            _logger.debug("Scheduling new debounce timer (%.1fs)", self.debounce)
             self._timer = threading.Timer(self.debounce, self._fire)
             self._timer.daemon = True
             self._timer.start()
 
     def _fire(self) -> None:
         try:
+            _logger.debug("Firing debounced trigger")
             self.trigger()
+        except Exception as e:
+            _logger.error("Error during watch trigger: %s", e, exc_info=True)
         finally:
             with self._lock:
                 self._timer = None
@@ -100,19 +113,29 @@ class WatchMode:
 
     def run(self) -> None:
         """Block, watching the directory until interrupted (Ctrl-C)."""
+
+        def trigger() -> None:
+            try:
+                _logger.info("Running triggered scan...")
+                self.scan_callback()
+                _logger.info("Scan completed successfully")
+            except Exception as e:
+                _logger.error("Error during watch scan: %s", e, exc_info=True)
+
         handler = DebouncedHandler(
-            trigger=self.scan_callback,
+            trigger=trigger,
             debounce=self.debounce,
             ignore_segments=self.ignore_segments,
         )
         observer = Observer()
         observer.schedule(handler, self.root, recursive=True)
         observer.start()
+        _logger.info("Watching %s (Ctrl-C to exit)", self.root)
         try:
             while True:
                 time.sleep(0.5)
         except KeyboardInterrupt:
-            pass
+            _logger.info("Received KeyboardInterrupt, shutting down...")
         finally:
             observer.stop()
             observer.join()

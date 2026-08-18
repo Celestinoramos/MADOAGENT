@@ -5,6 +5,7 @@ PyYAML>=6.0
 requests>=2.31
 anthropic>=0.39
 watchdog>=4.0
+numpy>=1.24
 pytest>=8.0
 
 [dev]

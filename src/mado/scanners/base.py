@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 from pathlib import Path
 from typing import Protocol
 
 from mado.findings.schema import Finding
+
+_logger = logging.getLogger(__name__)
 
 
 class Scanner(Protocol):
@@ -20,6 +23,33 @@ class Scanner(Protocol):
 
     def run(self, path: str) -> list[Finding]:
         """Run the scanner against a path and return normalized findings."""
+
+
+class BaseScanner:
+    """Base class for scanner implementations with standardized error handling.
+
+    Provides a consistent pattern for handling scanner errors, logging, and
+    returning empty finding lists instead of propagating exceptions.
+    """
+
+    def scan(self, path: str) -> list[Finding]:
+        """Run the scanner against a path and return normalized findings.
+
+        Subclasses should implement the core scanning logic in ``_do_scan()``
+        and this method will handle errors gracefully.
+        """
+        try:
+            return self._do_scan(path)
+        except ValueError as e:
+            _logger.warning("ValueError in %s scanner for %s: %s", self.name, path, e)
+            return []
+        except Exception as e:
+            _logger.error("Unexpected error in %s scanner for %s: %s", self.name, path, e, exc_info=True)
+            return []
+
+    def _do_scan(self, path: str) -> list[Finding]:
+        """Core scanning logic to be implemented by subclasses."""
+        raise NotImplementedError
 
 
 def binary_available(binary: str) -> bool:
