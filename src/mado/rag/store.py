@@ -16,11 +16,13 @@ import math
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 
 try:
-    from faiss import IndexFlatIP
+    from faiss import IndexFlatIP  # type: ignore[import-not-found]
+
     _FAISS_AVAILABLE = True
 except Exception:  # pragma: no cover - faiss optional
     _FAISS_AVAILABLE = False
@@ -48,7 +50,7 @@ class VectorStore:
     """
 
     chunks: list[_Chunk] = field(default_factory=list)
-    _faiss_index: any = None  # type: ignore
+    _faiss_index: Any = None
     _embedding_dim: int = 768
     _backend: str = "tfidf"  # "faiss" or "tfidf"
     _doc_freq: dict[str, int] | None = None
@@ -65,7 +67,7 @@ class VectorStore:
     # Public API
     # -----------------------------------------------------------------
 
-    def add(self, chunks: Iterable[tuple[str, str | list[float]]]) -> None:
+    def add(self, chunks: Iterable[tuple[str, str | list[float] | np.ndarray]]) -> None:
         """Add ``(id, embedding_or_text)`` pairs to the store.
 
         Each chunk can be:
@@ -153,14 +155,16 @@ class VectorStore:
         """
         query_tokens = _TOKEN_RE.findall(query.lower())
         query_vec = self._tfidf_vector(query_tokens)
+        if query_vec is None:
+            return []
 
         scored: list[tuple[float, _Chunk]] = []
         for chunk in self.chunks:
-            # For text-based chunks (embedding is None), compute TF-IDF vector from text
-            if chunk.embedding is None:
-                chunk_vec = self._tfidf_vector(_TOKEN_RE.findall(chunk.text.lower()))
-            else:
-                chunk_vec = chunk.embedding
+            # Embedding-based chunks are handled by the FAISS backend; in the
+            # TF-IDF fallback only text chunks can be compared.
+            if chunk.embedding is not None:
+                continue
+            chunk_vec = self._tfidf_vector(_TOKEN_RE.findall(chunk.text.lower()))
             if chunk_vec is None:
                 continue
             # Compute dot product for dict-based TF-IDF vectors
@@ -244,7 +248,7 @@ class VectorStore:
             emb = None
             if chunk_data.get("embedding"):
                 emb = np.array(chunk_data["embedding"], dtype="float32")
-            store.add((chunk_data["id"], emb if emb is not None else chunk_data["text"]))
+            store.add([(chunk_data["id"], emb if emb is not None else chunk_data["text"])])
         return store
 
     def __len__(self) -> int:

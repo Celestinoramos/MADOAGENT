@@ -32,6 +32,8 @@ class BaseScanner:
     returning empty finding lists instead of propagating exceptions.
     """
 
+    name: str
+
     def scan(self, path: str) -> list[Finding]:
         """Run the scanner against a path and return normalized findings.
 

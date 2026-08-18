@@ -11,7 +11,7 @@ _store: VectorStore | None = None
 
 def _get_store() -> VectorStore:
     global _store
-    if _store is None or _store.is_empty:
+    if _store is None or _store.is_empty():
         _store = build_default_store()
     return _store
 

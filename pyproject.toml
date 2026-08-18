@@ -65,7 +65,7 @@ extend-immutable-calls = ["typer.Argument", "typer.Option"]
 quote-style = "double"
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 mypy_path = "src"
 check_untyped_defs = true
 warn_unused_ignores = true

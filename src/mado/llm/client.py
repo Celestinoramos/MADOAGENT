@@ -43,7 +43,7 @@ def llm_enabled() -> bool:
     if not os.environ.get("GROQ_API_KEY"):
         return False
     try:
-        from groq import Groq  # noqa: F401
+        from groq import Groq  # type: ignore[import-not-found]  # noqa: F401
     except ImportError:
         return False
     return True
