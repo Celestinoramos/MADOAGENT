@@ -85,18 +85,20 @@ def scan(
             report = _scan_static(str(path), diff=diff, severity=severity, config_path=config_path)
     except AbortScan as exc:
         error_console.print(f"[red]aborted:[/red] {exc}")
-        raise typer.Exit(code=1) from exc
+        raise typer.Exit(code=2) from exc
     except RuntimeError as exc:
         error_console.print(f"[red]error:[/red] {exc}")
-        raise typer.Exit(code=1) from exc
+        raise typer.Exit(code=2) from exc
 
     rendered = _render_report(report, format)
-    if rendered is None:
-        return
-    if output:
-        Path(output).write_text(rendered, encoding="utf-8")
-    else:
-        sys.stdout.write(rendered + "\n")
+    if rendered is not None:
+        if output:
+            Path(output).write_text(rendered, encoding="utf-8")
+        else:
+            sys.stdout.write(rendered + "\n")
+
+    if report.findings:
+        raise typer.Exit(code=1)
 
 
 def _scan_watch(path: str, severity: str | None, config_path: str | None) -> None:

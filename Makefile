@@ -71,7 +71,7 @@ system-install:
 	@python -m pip install -e .
 
 test: dev
-	@$(PY) -m unittest discover -q
+	@$(PY) -m pytest -q
 
 lint: dev
 	@$(PY) -m ruff check .

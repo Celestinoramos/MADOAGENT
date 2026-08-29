@@ -114,6 +114,10 @@ mado scan --target http://localhost:8000
 
 O modo dinâmico pede sempre confirmação explícita de autorização antes de correr testes ativos. A flag `--yes-i-accept-risks` contorna o guardrail para uso em CI/CD — usa-a apenas quando souberes o que estás a fazer.
 
+O comando `scan` usa exit codes próprios para automação: `0` quando não há
+findings acima do threshold, `1` quando existem findings e `2` quando o scan
+é abortado ou ocorre um erro de execução.
+
 ## Exemplo de saída
 
 ```text
