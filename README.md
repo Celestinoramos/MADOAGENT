@@ -30,6 +30,9 @@ Modo dinâmico (mado scan --target): CLI → Orquestrador (Graph) → Recon → 
 - **`mado config --init`** — cria `.mado.yml` com defaults; `mado config` mostra a configuração efetiva.
 - RAG local com OWASP Top 10 + CWE; explicações via LLM (Groq) quando `GROQ_API_KEY` está definida, com fallback à base de conhecimento local e cache `.mado/cache.json`.
 
+Cada scan guarda `.mado/last-scan.json`. Os comandos `explain`, `ask`, `report`
+e `ignore` reutilizam esse resultado; passa `--rescan` para forçar uma nova análise.
+
 ## Instalação
 
 Requisitos: **Python 3.11+** e `git`. Os scanners opcionais (`bandit`, `gitleaks`, `pip-audit`, `npm`, `nuclei`, Docker para ZAP) são usados automaticamente quando disponíveis — os que faltarem são saltados com um aviso, sem bloquear o scan.

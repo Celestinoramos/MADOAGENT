@@ -33,7 +33,7 @@ class CliExplainTests(unittest.TestCase):
         )
 
         with patch("mado.cli.run_scan", return_value=ScanResult(findings=[finding])):
-            result = runner.invoke(app, ["explain", "f_test", "--path", "."])
+            result = runner.invoke(app, ["explain", "f_test", "--path", ".", "--rescan"])
 
         self.assertEqual(result.exit_code, 0)
         stdout = _strip_ansi(result.stdout)
