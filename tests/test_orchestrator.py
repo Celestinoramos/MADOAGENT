@@ -8,7 +8,13 @@ from unittest.mock import patch
 
 from mado.config import Config
 from mado.findings.schema import Finding
-from mado.orchestrator import ScanResult, _git_changed_files, run_orchestrator, run_scan
+from mado.orchestrator import (
+    ScanResult,
+    _deduplicate_findings,
+    _git_changed_files,
+    run_orchestrator,
+    run_scan,
+)
 
 
 class _FakeScanner:
@@ -35,6 +41,16 @@ def _finding(severity: str) -> Finding:
 
 
 class OrchestratorTests(unittest.TestCase):
+    def test_deduplicates_same_location_and_cwe(self) -> None:
+        semgrep = _finding("WARNING")
+        semgrep.scanner = "semgrep"
+        bandit = _finding("HIGH")
+        bandit.id = "f_bandit"
+        bandit.scanner = "bandit"
+        deduplicated = _deduplicate_findings([semgrep, bandit])
+        self.assertEqual(len(deduplicated), 1)
+        self.assertEqual(deduplicated[0].scanner, "bandit")
+
     @patch("mado.explanations.engine.llm_enabled", return_value=False)
     def test_run_scan_returns_normalized_findings(self, _mock_llm: object) -> None:
         result = run_scan(".", scanners=[_FakeScanner([_finding("ERROR")])])

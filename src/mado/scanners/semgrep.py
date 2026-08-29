@@ -13,6 +13,8 @@ from typing import Any
 
 from mado.findings.schema import Finding, normalize_semgrep_result
 
+_SECURITY_CONFIGS = ("p/default",)
+
 
 @dataclass(slots=True)
 class SemgrepScanner:
@@ -69,6 +71,8 @@ class SemgrepScanner:
     def run(self, path: str) -> list[Finding]:
         try:
             command = self._resolve_executable() + ["--json", "--config", self._resolve_config_path()]
+            for config in _SECURITY_CONFIGS:
+                command.extend(["--config", config])
         except FileNotFoundError as exc:
             raise RuntimeError("Semgrep binary not found. Install semgrep and ensure it is on PATH.") from exc
 

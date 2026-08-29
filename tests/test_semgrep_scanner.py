@@ -37,6 +37,10 @@ class SemgrepScannerTests(unittest.TestCase):
         self.assertEqual(findings[0].file, "src/app.py")
         self.assertEqual(findings[0].line, 10)
         self.assertEqual(findings[0].message_raw, "SQL injection")
+        command = cast_run.call_args.args[0]
+        config_values = [command[index + 1] for index, value in enumerate(command) if value == "--config"]
+        self.assertIn("p/default", config_values)
+        self.assertTrue(any(value.endswith("semgrep.yml") for value in config_values))
 
     @patch("mado.scanners.semgrep.shutil.which", return_value=None)
     @patch("mado.scanners.semgrep.Path.exists", return_value=False)

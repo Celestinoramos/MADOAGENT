@@ -13,7 +13,7 @@ from mado.env import load_project_env
 from mado.explanations import explain_finding
 from mado.findings.cache import ExplanationCache
 from mado.findings.ignore import IgnoreList
-from mado.findings.schema import Finding, meets_severity_threshold, normalize_severity
+from mado.findings.schema import Finding, meets_severity_threshold, normalize_severity, severity_rank
 from mado.llm.client import set_llm_enabled, set_llm_model
 from mado.scanners.base import Scanner
 from mado.scanners.registry import (
@@ -115,6 +115,24 @@ def _filter_non_code(findings: list[Finding], code_extensions: list[str]) -> lis
     ]
 
 
+def _deduplicate_findings(findings: list[Finding]) -> list[Finding]:
+    """Collapse overlapping scanner reports for the same source location."""
+    deduplicated: dict[tuple[str, int | None, str], Finding] = {}
+    passthrough: list[Finding] = []
+    for finding in findings:
+        if finding.line is None:
+            passthrough.append(finding)
+            continue
+        category = finding.cwe or finding.rule_id or finding.message_raw
+        key = (str(Path(finding.file).resolve()), finding.line, category)
+        existing = deduplicated.get(key)
+        if existing is None or severity_rank(normalize_severity(finding.severity_raw)) > severity_rank(
+            normalize_severity(existing.severity_raw)
+        ):
+            deduplicated[key] = finding
+    return [*deduplicated.values(), *passthrough]
+
+
 def _filter_and_enrich(
     findings: list[Finding],
     config: Config,
@@ -195,6 +213,7 @@ def run_scan(
 
     cache = ExplanationCache(root=scan_root, ttl_days=active_config.cache_ttl_days)
     findings = _filter_non_code(findings, active_config.code_extensions)
+    findings = _deduplicate_findings(findings)
     findings = _filter_and_enrich(findings, active_config, scan_root, cache)
 
     return ScanResult(findings=findings, warnings=warnings, stacks=stacks, config=active_config)

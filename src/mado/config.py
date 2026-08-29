@@ -270,7 +270,9 @@ class Config:
             dast.update({str(k): v for k, v in raw_dast.items()})
 
         ignore_paths = raw.get("ignore_paths")
-        if not isinstance(ignore_paths, list):
+        if isinstance(ignore_paths, list):
+            ignore_paths = list(dict.fromkeys([*DEFAULT_IGNORE_PATHS, *map(str, ignore_paths)]))
+        else:
             ignore_paths = list(DEFAULT_IGNORE_PATHS)
 
         code_extensions = raw.get("code_extensions")
