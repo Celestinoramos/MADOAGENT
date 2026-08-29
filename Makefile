@@ -45,25 +45,9 @@ scanners: dev
 
 install: deps
 	@echo "Project installed (editable) in $(VENV)"
-	@echo "Creating helper script 'activate' to add $(VENV)/bin to PATH for this project"
-	@printf '#!/usr/bin/env bash\n# Source to add project venv to PATH for current shell session\nexport PATH="$(CURDIR)/$(VENV)/bin:\$$PATH"\n' > activate
-	@chmod +x activate
 	@echo "Running test suite to verify installation..."
-	@$(PY) -m unittest discover -q || (echo "Tests failed during install" && exit 1)
-	@echo "Attempting to add venv path to your shell rc (backup will be created)"
-	@sh -c '\
-SHELLNAME=$$(basename "$$SHELL"); \
-if [ "$$SHELLNAME" = "zsh" ]; then RC="$$HOME/.zshrc"; elif [ "$$SHELLNAME" = "bash" ]; then RC="$$HOME/.bashrc"; else RC="$$HOME/.profile"; fi; \
-BACKUP="$$RC.mado_backup.$$(date +%s)"; \
-echo "Backing up $$RC -> $$BACKUP"; \
-cp -f "$$RC" "$$BACKUP" 2>/dev/null || true; \
-EXPORT_LINE="export PATH=\"$(CURDIR)/$(VENV)/bin:\$$PATH\""; \
-grep -Fq "$(CURDIR)/$(VENV)/bin" "$$RC" 2>/dev/null || (echo "# Added by mado install" >> "$$RC" && echo "$$EXPORT_LINE" >> "$$RC"); \
-echo "Appended PATH to $$RC"; \
-'
-	@echo "Install complete. Launching a new interactive shell with the project's venv in PATH..."
-	@echo "When you exit that shell you'll return to your previous session."
-	@exec env PATH="$(CURDIR)/$(VENV)/bin:$$PATH" $$SHELL -i
+	@$(PY) -m pytest -q || (echo "Tests failed during install" && exit 1)
+	@echo "Run 'source $(VENV)/bin/activate' to use the CLI."
 
 system-install:
 	@echo "Installing package system-wide (may require root privileges)"

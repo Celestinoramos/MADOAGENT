@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import sys
-from dataclasses import asdict, replace
 from pathlib import Path
 
 import typer
@@ -106,7 +105,7 @@ def scan(
 def _scan_watch(path: str, severity: str | None, config_path: str | None) -> None:
     config = _resolve_config(Path(path), config_path)
     if severity:
-        config = replace(config, severity_threshold=severity)
+        config = config.model_copy(update={"severity_threshold": severity})
 
     def trigger() -> None:
         result = run_scan(path, diff=True, config=config)
@@ -121,7 +120,7 @@ def _scan_watch(path: str, severity: str | None, config_path: str | None) -> Non
 def _scan_static(path: str, diff: bool, severity: str | None, config_path: str | None) -> Report:
     config = _resolve_config(Path(path), config_path)
     if severity:
-        config = replace(config, severity_threshold=severity)
+        config = config.model_copy(update={"severity_threshold": severity})
     result = run_scan(path, diff=diff, config=config)
     _print_warnings(result.warnings)
     return Report.from_findings(Path(path).resolve().name, result.findings)
@@ -405,7 +404,7 @@ def config_cmd(
     except RuntimeError as exc:
         error_console.print(f"[red]error:[/red] {exc}")
         raise typer.Exit(code=1) from exc
-    console.print(json.dumps(asdict(loaded), indent=2, ensure_ascii=False, default=str))
+    console.print(json.dumps(loaded.model_dump(), indent=2, ensure_ascii=False, default=str))
 
 
 if __name__ == "__main__":

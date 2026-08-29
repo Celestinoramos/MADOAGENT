@@ -6,14 +6,10 @@ Pydantic is used for configuration validation, ensuring that values like
 
 from __future__ import annotations
 
-import logging
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
-
-_LOGGER = logging.getLogger(__name__)
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 _VALID_SEVERITY_LEVELS = {"low", "medium", "high", "critical"}
 
@@ -86,21 +82,6 @@ DEFAULT_DAST = {
 }
 
 
-class _ConfigBase(BaseModel):
-    """Base config model with Pydantic validation."""
-
-    severity_threshold: str = Field("low", description="Minimum severity (low|medium|high|critical)")
-
-    @field_validator("severity_threshold")
-    @classmethod
-    def _validate_severity_threshold(cls, v: str) -> str:
-        if v not in _VALID_SEVERITY_LEVELS:
-            raise ValueError(
-                f"Invalid severity_threshold: {v}. Must be one of {_VALID_SEVERITY_LEVELS}"
-            )
-        return v
-
-
 def find_config_file(root: str | Path | None = None) -> Path | None:
     """Locate ``.mado.yml`` starting at ``root`` (or the current directory)."""
     base = Path(root).resolve() if root else Path.cwd()
@@ -136,7 +117,10 @@ def load_config(root: str | Path | None = None) -> Config:
     if not isinstance(raw, dict):
         raise RuntimeError(f"Invalid config file {config_file}: expected a YAML mapping")
 
-    return Config.from_dict(raw, source_path=str(config_file))
+    try:
+        return Config.from_dict(raw, source_path=str(config_file))
+    except ValidationError as exc:
+        raise RuntimeError(f"Invalid config file {config_file}: {exc}") from exc
 
 
 def load_config_file(config_path: str | Path) -> Config:
@@ -155,7 +139,10 @@ def load_config_file(config_path: str | Path) -> Config:
     if not isinstance(raw, dict):
         raise RuntimeError(f"Invalid config file {path}: expected a YAML mapping")
 
-    return Config.from_dict(raw, source_path=str(path))
+    try:
+        return Config.from_dict(raw, source_path=str(path))
+    except ValidationError as exc:
+        raise RuntimeError(f"Invalid config file {path}: {exc}") from exc
 
 
 def render_example_config() -> str:
@@ -214,18 +201,49 @@ dast:
 """
 
 
-@dataclass(slots=True)
-class Config:
+class Config(BaseModel):
     """Merged configuration with defaults for every missing key."""
 
+    model_config = ConfigDict(extra="forbid")
+
     severity_threshold: str = "low"
-    scanners: dict[str, bool] = field(default_factory=lambda: dict(_DEFAULT_SCANNERS))
-    ignore_paths: list[str] = field(default_factory=lambda: list(DEFAULT_IGNORE_PATHS))
-    code_extensions: list[str] = field(default_factory=lambda: list(DEFAULT_CODE_EXTENSIONS))
-    cache_ttl_days: int | None = 30
-    llm: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_LLM))
-    dast: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_DAST))
+    scanners: dict[str, bool] = Field(default_factory=lambda: dict(_DEFAULT_SCANNERS))
+    ignore_paths: list[str] = Field(default_factory=lambda: list(DEFAULT_IGNORE_PATHS))
+    code_extensions: list[str] = Field(default_factory=lambda: list(DEFAULT_CODE_EXTENSIONS))
+    cache_ttl_days: int | None = Field(default=30, ge=0)
+    llm: dict[str, Any] = Field(default_factory=lambda: dict(DEFAULT_LLM))
+    dast: dict[str, Any] = Field(default_factory=lambda: dict(DEFAULT_DAST))
     source_path: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _merge_defaults(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        merged = dict(value)
+        for key, defaults in (
+            ("scanners", _DEFAULT_SCANNERS),
+            ("llm", DEFAULT_LLM),
+            ("dast", DEFAULT_DAST),
+        ):
+            supplied = merged.get(key)
+            if supplied is None:
+                merged[key] = dict(defaults)
+            elif isinstance(supplied, dict):
+                merged[key] = {**defaults, **supplied}
+
+        supplied_ignores = merged.get("ignore_paths")
+        if supplied_ignores is not None:
+            if isinstance(supplied_ignores, list):
+                merged["ignore_paths"] = list(dict.fromkeys([*DEFAULT_IGNORE_PATHS, *map(str, supplied_ignores)]))
+        return merged
+
+    @field_validator("severity_threshold")
+    @classmethod
+    def _validate_severity_threshold(cls, value: str) -> str:
+        if value not in _VALID_SEVERITY_LEVELS:
+            raise ValueError(f"Invalid severity_threshold: {value}. Must be one of {_VALID_SEVERITY_LEVELS}")
+        return value
 
     @property
     def llm_enabled(self) -> bool:
@@ -247,48 +265,5 @@ class Config:
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any], source_path: str | None = None) -> Config:
-        """Build a config from a loaded YAML dict, applying defaults."""
-
-        # Validate severity_threshold using Pydantic
-        base = _ConfigBase(**{"severity_threshold": raw.get("severity_threshold", "low")})
-        severity_threshold = base.severity_threshold
-
-        scanners = dict(_DEFAULT_SCANNERS)
-        raw_scanners = raw.get("scanners", {})
-        if isinstance(raw_scanners, dict):
-            for name, enabled in raw_scanners.items():
-                scanners[str(name)] = bool(enabled)
-
-        llm = dict(DEFAULT_LLM)
-        raw_llm = raw.get("llm", {})
-        if isinstance(raw_llm, dict):
-            llm.update({str(k): v for k, v in raw_llm.items()})
-
-        dast = dict(DEFAULT_DAST)
-        raw_dast = raw.get("dast", {})
-        if isinstance(raw_dast, dict):
-            dast.update({str(k): v for k, v in raw_dast.items()})
-
-        ignore_paths = raw.get("ignore_paths")
-        if isinstance(ignore_paths, list):
-            ignore_paths = list(dict.fromkeys([*DEFAULT_IGNORE_PATHS, *map(str, ignore_paths)]))
-        else:
-            ignore_paths = list(DEFAULT_IGNORE_PATHS)
-
-        code_extensions = raw.get("code_extensions")
-        if not isinstance(code_extensions, list):
-            code_extensions = list(DEFAULT_CODE_EXTENSIONS)
-
-        cache_ttl = raw.get("cache_ttl_days", 30)
-        cache_ttl_days: int | None = None if cache_ttl is None else max(int(cache_ttl), 0)
-
-        return cls(
-            severity_threshold=str(severity_threshold),
-            scanners=scanners,
-            ignore_paths=[str(item) for item in ignore_paths],
-            code_extensions=[str(extension) for extension in code_extensions],
-            cache_ttl_days=cache_ttl_days,
-            llm=llm,
-            dast=dast,
-            source_path=source_path,
-        )
+        """Build a validated config from a loaded YAML mapping."""
+        return cls.model_validate({**raw, "source_path": source_path})

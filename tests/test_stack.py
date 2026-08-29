@@ -44,12 +44,12 @@ class StackDetectionTests(unittest.TestCase):
         selected = select_scanners(".", {"python"}, config)
         for scanner in selected:
             if scanner.name in {"semgrep", "bandit"}:
-                self.assertEqual(scanner.exclude, ("tests",))
+                self.assertIn("tests", scanner.exclude)
+                self.assertNotIn("/etc", scanner.exclude)
+                self.assertNotIn("../outside", scanner.exclude)
 
     def test_select_scanners_respects_disabled_flags(self) -> None:
-        config = Config(
-            scanners={"semgrep": True, "bandit": False, "gitleaks": False, "dependencies": False}
-        )
+        config = Config(scanners={"semgrep": True, "bandit": False, "gitleaks": False, "dependencies": False})
         with (
             patch("mado.scanners.registry.SemgrepScanner.is_available", return_value=True),
             patch("mado.scanners.registry.BanditScanner.is_available", return_value=True),

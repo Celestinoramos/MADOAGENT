@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from mado.config import Config, load_config, load_config_file, render_example_config
 
 
@@ -62,6 +64,12 @@ class ConfigTests(unittest.TestCase):
         self.assertIn("severity_threshold", parsed)
         self.assertIn("scanners", parsed)
         self.assertEqual(parsed["llm"]["provider"], "groq")
+
+    def test_rejects_unknown_keys_and_negative_cache_ttl(self) -> None:
+        with self.assertRaises(ValidationError):
+            Config.from_dict({"unexpected": True})
+        with self.assertRaises(ValidationError):
+            Config.from_dict({"cache_ttl_days": -1})
 
 
 if __name__ == "__main__":
