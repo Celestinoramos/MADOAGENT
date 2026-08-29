@@ -45,9 +45,9 @@ scanners: dev
 
 install: deps
 	@echo "Project installed (editable) in $(VENV)"
-	@echo "Running test suite to verify installation..."
-	@$(PY) -m pytest -q || (echo "Tests failed during install" && exit 1)
-	@echo "Run 'source $(VENV)/bin/activate' to use the CLI."
+	@echo "Verifying the CLI entry point..."
+	@$(VENV)/bin/mado --help > /dev/null || (echo "mado CLI is not runnable" && exit 1)
+	@echo "Run 'source $(VENV)/bin/activate' to use the CLI, or 'make test' to run the suite."
 
 system-install:
 	@echo "Installing package system-wide (may require root privileges)"
