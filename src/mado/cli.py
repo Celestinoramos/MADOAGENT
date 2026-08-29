@@ -23,6 +23,7 @@ from mado.report.models import Report
 from mado.report.renderer import (
     render_report_json,
     render_report_markdown,
+    render_report_sarif,
     render_report_terminal,
 )
 from mado.watch import WatchMode
@@ -72,8 +73,8 @@ def scan(
 ) -> None:
     """Scan a project (static) or a running application (dynamic)."""
 
-    if format.lower() not in {"terminal", "json", "md"}:
-        raise typer.BadParameter("format must be terminal, json or md")
+    if format.lower() not in {"terminal", "json", "md", "sarif"}:
+        raise typer.BadParameter("format must be terminal, json, md or sarif")
 
     try:
         if target is not None:
@@ -151,6 +152,8 @@ def _render_report(report: Report, format: str) -> str | None:
         return render_report_json(report)
     if format == "md":
         return render_report_markdown(report)
+    if format == "sarif":
+        return render_report_sarif(report)
     render_report_terminal(report)
     return None
 
@@ -306,8 +309,8 @@ def report(
 ) -> None:
     """Render the most recent project scan."""
 
-    if format.lower() not in {"md", "json"}:
-        raise typer.BadParameter("format must be md or json")
+    if format.lower() not in {"md", "json", "sarif"}:
+        raise typer.BadParameter("format must be md, json or sarif")
 
     try:
         report_data, warnings = _load_or_rescan(path, rescan)
@@ -316,7 +319,12 @@ def report(
         raise typer.Exit(code=1) from exc
 
     _print_warnings(warnings)
-    rendered = render_report_json(report_data) if format == "json" else render_report_markdown(report_data)
+    if format == "json":
+        rendered = render_report_json(report_data)
+    elif format == "sarif":
+        rendered = render_report_sarif(report_data)
+    else:
+        rendered = render_report_markdown(report_data)
     if output:
         Path(output).write_text(rendered, encoding="utf-8")
     else:

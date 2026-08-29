@@ -1,4 +1,4 @@
-"""Rendering for findings and reports: terminal, markdown, JSON."""
+"""Rendering for findings and reports: terminal, Markdown, JSON and SARIF."""
 
 from __future__ import annotations
 
@@ -150,12 +150,75 @@ def render_report_json(report: Report) -> str:
     return json.dumps(report.to_dict(), indent=2, ensure_ascii=False)
 
 
+def render_report_sarif(report: Report) -> str:
+    """Serialize a report as SARIF 2.1.0 for code-scanning integrations."""
+    rules: dict[str, dict] = {}
+    results: list[dict] = []
+    for finding in report.findings:
+        rule_id = finding.rule_id or f"{finding.scanner}.unknown"
+        rules.setdefault(
+            rule_id,
+            {
+                "id": rule_id,
+                "name": rule_id,
+                "shortDescription": {"text": finding.message_raw},
+                "properties": {
+                    "scanner": finding.scanner,
+                    "cwe": finding.cwe,
+                },
+            },
+        )
+        location: dict = {
+            "physicalLocation": {
+                "artifactLocation": {"uri": finding.file},
+            }
+        }
+        if finding.line is not None:
+            location["physicalLocation"]["region"] = {"startLine": finding.line}
+        results.append(
+            {
+                "ruleId": rule_id,
+                "level": _sarif_level(normalize_severity(finding.severity_raw)),
+                "message": {"text": finding.message_raw},
+                "locations": [location],
+                "partialFingerprints": {"madoFindingId": finding.id},
+            }
+        )
+    payload = {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "Madó",
+                        "informationUri": "https://github.com/Celestinoramos/MADOAGENT",
+                        "rules": list(rules.values()),
+                    }
+                },
+                "results": results,
+            }
+        ],
+    }
+    return json.dumps(payload, indent=2, ensure_ascii=False)
+
+
+def _sarif_level(severity: str) -> str:
+    if severity in {"critical", "high"}:
+        return "error"
+    if severity == "medium":
+        return "warning"
+    return "note"
+
+
 def render_findings(findings: list[Finding], format: str) -> str | None:
     """Render findings in a given format, returning text for md/json."""
     if format == "json":
         return render_findings_json(findings)
     if format == "md":
         return render_findings_markdown(findings)
+    if format == "sarif":
+        return render_report_sarif(Report.from_findings("", findings))
     render_findings_terminal(findings)
     return None
 
@@ -166,5 +229,7 @@ def serialize_report(report: Report, format: str) -> str:
         return render_report_json(report)
     if format == "md":
         return render_report_markdown(report)
+    if format == "sarif":
+        return render_report_sarif(report)
     render_report_terminal(report)
     return ""

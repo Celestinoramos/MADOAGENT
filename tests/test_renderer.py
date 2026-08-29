@@ -11,6 +11,7 @@ from mado.report.renderer import (
     render_findings_markdown,
     render_report_json,
     render_report_markdown,
+    render_report_sarif,
 )
 
 
@@ -78,6 +79,19 @@ class RendererTests(unittest.TestCase):
         report = Report.from_findings("target", [_finding("ERROR")])
         markdown = render_report_markdown(report)
         self.assertIn("**Target:** target", markdown)
+
+    def test_render_report_sarif(self) -> None:
+        report = Report.from_findings("target", [_finding("ERROR")])
+        payload = json.loads(render_report_sarif(report))
+        self.assertEqual(payload["version"], "2.1.0")
+        run = payload["runs"][0]
+        self.assertEqual(run["tool"]["driver"]["name"], "Madó")
+        self.assertEqual(run["results"][0]["ruleId"], "r")
+        self.assertEqual(run["results"][0]["level"], "error")
+        self.assertEqual(
+            run["results"][0]["locations"][0]["physicalLocation"]["region"]["startLine"],
+            1,
+        )
 
 
 if __name__ == "__main__":

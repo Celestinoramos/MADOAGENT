@@ -24,7 +24,7 @@ Modo dinâmico (mado scan --target): CLI → Orquestrador (Graph) → Recon → 
 - **`mado scan --target URL [--openapi SPEC] [--postman COLL]`** — modo dinâmico (DAST): confirmação de autorização → reconhecimento (OpenAPI/Postman/crawl) → ZAP (Docker) + Nuclei → relatório.
 - **`mado explain FINDING_ID`** — explicação aprofundada de um finding (causa raiz, impacto, severidade, correção, referências).
 - **`mado ask "pergunta" [--finding ID]`** — pergunta sobre vulnerabilidades, respondida via RAG + LLM (ou base de conhecimento local).
-- **`mado report --format md|json --output FILE`** — relatório markdown/JSON pronto para anexar ao projeto.
+- **`mado report --format md|json|sarif --output FILE`** — relatório Markdown, JSON ou SARIF pronto para CI.
 - **`mado ignore FINDING_ID`** — regista falsos positivos para não reaparecerem em scans futuros (`--list`, `--remove`, `--clear`).
 - **`mado scan --watch`** — re-scan automático ao gravar ficheiros (via watchdog, com debounce).
 - **`mado config --init`** — cria `.mado.yml` com defaults; `mado config` mostra a configuração efetiva.
@@ -98,6 +98,7 @@ mado scan .                          # análise estática completa
 mado scan . --diff                   # só ficheiros alterados
 mado scan . --format json            # output em JSON
 mado scan . --format md --output relatorio.md
+mado scan . --format sarif --output mado.sarif
 mado scan . --severity high          # ignora findings abaixo de high
 mado scan . --watch                  # re-scan automático ao gravar ficheiros
 mado explain f_8f2a1c                # explica um finding específico
