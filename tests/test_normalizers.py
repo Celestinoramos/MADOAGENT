@@ -52,6 +52,8 @@ class NormalizerTests(unittest.TestCase):
         self.assertEqual(finding.cwe, "CWE-798")
         self.assertEqual(finding.line, 12)
         self.assertIn("AWS Access Token", finding.message_raw)
+        self.assertEqual(finding.code_snippet, "[REDACTED]")
+        self.assertNotIn("AKIAIOSFODNN7EXAMPLE", str(finding.extra))
 
     def test_pip_audit(self) -> None:
         dependency = {"name": "requests", "version": "2.19.1", "vulns": []}

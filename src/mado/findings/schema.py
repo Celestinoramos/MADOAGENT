@@ -240,9 +240,9 @@ def normalize_gitleaks_result(result: dict[str, Any]) -> Finding:
     description = _first_non_empty([result.get("Description"), result.get("RuleID")]) or "Potential secret found"
     severity = _first_non_empty([result.get("Severity"), result.get("severity")]) or "WARNING"
 
-    snippet = None
-    if isinstance(secret, str):
-        snippet = secret if len(secret) < 200 else secret[:80] + "..." + secret[-20:]
+    fingerprint = None
+    if isinstance(secret, str) and secret:
+        fingerprint = hashlib.sha256(secret.encode("utf-8")).hexdigest()[:12]
 
     return _make_finding(
         file=path,
@@ -252,8 +252,8 @@ def normalize_gitleaks_result(result: dict[str, Any]) -> Finding:
         cwe="CWE-798",
         severity_raw=severity,
         message_raw=f"{description} (rule {result.get('RuleID')})" if result.get("RuleID") else description,
-        code_snippet=snippet,
-        extra={"match": result.get("Match")},
+        code_snippet="[REDACTED]",
+        extra={"secret_fingerprint": fingerprint},
     )
 
 

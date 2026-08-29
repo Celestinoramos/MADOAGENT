@@ -113,6 +113,8 @@ mado scan --target http://localhost:8000
 ```
 
 O modo dinâmico pede sempre confirmação explícita de autorização antes de correr testes ativos. A flag `--yes-i-accept-risks` contorna o guardrail para uso em CI/CD — usa-a apenas quando souberes o que estás a fazer.
+Por segurança, o host também tem de constar em `dast.allowed_hosts`; os defaults
+aceitam apenas loopback. Adiciona explicitamente os hosts de staging autorizados.
 
 O comando `scan` usa exit codes próprios para automação: `0` quando não há
 findings acima do threshold, `1` quando existem findings e `2` quando o scan
@@ -187,6 +189,11 @@ dast:
   enable_zap: true
   enable_nuclei: true
   zap_image: zaproxy/zap-stable
+  timeout_seconds: 300
+  max_routes: 25
+  allowed_hosts:
+    - localhost
+    - 127.0.0.1
 ```
 
 A configuração é procurada a partir do diretório alvo e diretórios-pai até 4 níveis; valores omissos usam defaults.

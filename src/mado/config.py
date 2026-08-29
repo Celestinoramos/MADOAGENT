@@ -80,6 +80,9 @@ DEFAULT_DAST = {
     "enable_zap": True,
     "enable_nuclei": True,
     "zap_image": "zaproxy/zap-stable",
+    "timeout_seconds": 300,
+    "max_routes": 25,
+    "allowed_hosts": ["localhost", "127.0.0.1", "::1"],
 }
 
 
@@ -203,6 +206,11 @@ dast:
   enable_zap: true
   enable_nuclei: true
   zap_image: zaproxy/zap-stable
+  timeout_seconds: 300
+  max_routes: 25
+  allowed_hosts:
+    - localhost
+    - 127.0.0.1
 """
 
 

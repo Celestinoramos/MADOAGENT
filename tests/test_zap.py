@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from mado.dast_scanners.zap import ZapScanner
+from mado.dast_scanners.zap import ZapScanner, _docker_target_url
 
 
 class _CompletedProcess:
@@ -39,10 +39,24 @@ def _write_report_from_docker_command(command: list[str], payload: dict) -> None
 
 
 class ZapScannerTests(unittest.TestCase):
+    def test_docker_desktop_rewrites_loopback_host(self) -> None:
+        with patch("mado.dast_scanners.zap.platform.system", return_value="Darwin"):
+            self.assertEqual(
+                _docker_target_url("http://localhost:8000/path?q=1"),
+                "http://host.docker.internal:8000/path?q=1",
+            )
+
+    def test_linux_keeps_loopback_for_host_network(self) -> None:
+        with patch("mado.dast_scanners.zap.platform.system", return_value="Linux"):
+            self.assertEqual(
+                _docker_target_url("http://localhost:8000/path"),
+                "http://localhost:8000/path",
+            )
+
     @patch("mado.dast_scanners.zap.docker_available", return_value=True)
     @patch("mado.dast_scanners.zap.subprocess.run")
     def test_exit_code_one_still_parses_alerts(self, mock_run: object, _docker: object) -> None:
-        def fake_run(command, capture_output, text):
+        def fake_run(command, capture_output, text, timeout):
             _write_report_from_docker_command(command, _ALERT)
             return _CompletedProcess(1)
 
@@ -55,7 +69,7 @@ class ZapScannerTests(unittest.TestCase):
     @patch("mado.dast_scanners.zap.docker_available", return_value=True)
     @patch("mado.dast_scanners.zap.subprocess.run")
     def test_exit_code_two_still_parses_alerts(self, mock_run: object, _docker: object) -> None:
-        def fake_run(command, capture_output, text):
+        def fake_run(command, capture_output, text, timeout):
             _write_report_from_docker_command(command, _ALERT)
             return _CompletedProcess(2)
 

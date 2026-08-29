@@ -42,3 +42,8 @@ dast:
   enable_zap: true
   enable_nuclei: true
   zap_image: zaproxy/zap-stable
+  timeout_seconds: 300
+  max_routes: 25
+  allowed_hosts:
+    - localhost
+    - 127.0.0.1
