@@ -2,9 +2,25 @@ from __future__ import annotations
 
 import os
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
+from mado.findings.schema import Finding
 from mado.llm.client import LlmClient, llm_enabled, set_llm_enabled, set_llm_model
 from mado.llm.prompts import SYSTEM_PROMPT, build_user_prompt
+
+
+def _finding() -> Finding:
+    return Finding(
+        id="f_test",
+        file="src/app.py",
+        line=10,
+        scanner="semgrep",
+        rule_id="python.sql.injection",
+        cwe="CWE-89",
+        severity_raw="ERROR",
+        message_raw="Possible SQL injection",
+    )
 
 
 class LlmClientTests(unittest.TestCase):
@@ -36,15 +52,15 @@ class LlmClientTests(unittest.TestCase):
         self.assertFalse(llm_enabled())
 
     def test_config_model_is_used_as_default(self) -> None:
-        set_llm_model("claude-3-7-sonnet")
+        set_llm_model("llama-3.3-70b-versatile")
         client = LlmClient()
-        self.assertEqual(client.model, "claude-3-7-sonnet")
+        self.assertEqual(client.model, "llama-3.3-70b-versatile")
 
     def test_repr_masks_api_key(self) -> None:
-        os.environ["GROQ_API_KEY"] = "sk-ant-super-secret"
+        os.environ["GROQ_API_KEY"] = "gsk_super-secret"
         client = LlmClient()
         rendered = repr(client)
-        self.assertNotIn("sk-ant-super-secret", rendered)
+        self.assertNotIn("gsk_super-secret", rendered)
         self.assertIn("***", rendered)
 
     def test_parse_json_with_markdown_fence(self) -> None:
@@ -73,6 +89,50 @@ class LlmClientTests(unittest.TestCase):
         self.assertIn("python.sql.injection", prompt)
         self.assertIn("CWE-89 context", prompt)
         self.assertIn("causa raiz", SYSTEM_PROMPT)
+        self.assertIn("critical|high|medium|low", SYSTEM_PROMPT)
+
+    def test_complete_uses_chat_completions(self) -> None:
+        captured: dict = {}
+
+        class _Completions:
+            def create(self, **kwargs):  # type: ignore[no-untyped-def]
+                captured.update(kwargs)
+                return SimpleNamespace(
+                    choices=[SimpleNamespace(message=SimpleNamespace(content="hello from groq"))]
+                )
+
+        fake = SimpleNamespace(chat=SimpleNamespace(completions=_Completions()))
+        client = LlmClient(api_key="gsk_test", model="test-model")
+        with (
+            patch("mado.llm.client.llm_enabled", return_value=True),
+            patch.object(client, "_get_client", return_value=fake),
+        ):
+            text = client.complete(system="sys", user="usr")
+
+        self.assertEqual(text, "hello from groq")
+        self.assertEqual(captured["model"], "test-model")
+        self.assertEqual(captured["messages"][0], {"role": "system", "content": "sys"})
+        self.assertEqual(captured["messages"][1], {"role": "user", "content": "usr"})
+
+    def test_explain_parses_groq_json(self) -> None:
+        payload = '{"summary": "sqli", "severity": "alta", "root_cause": "x", "impact": "y", "remediation": "z"}'
+
+        class _Completions:
+            def create(self, **kwargs):  # type: ignore[no-untyped-def]
+                return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=payload))])
+
+        fake = SimpleNamespace(chat=SimpleNamespace(completions=_Completions()))
+        client = LlmClient(api_key="gsk_test")
+        with (
+            patch("mado.llm.client.llm_enabled", return_value=True),
+            patch.object(client, "_get_client", return_value=fake),
+        ):
+            parsed = client.explain(_finding(), retrieved_context=["CWE-89"])
+
+        self.assertIsNotNone(parsed)
+        assert parsed is not None
+        self.assertEqual(parsed["summary"], "sqli")
+        self.assertEqual(parsed["severity"], "alta")
 
 
 if __name__ == "__main__":

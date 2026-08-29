@@ -16,6 +16,9 @@ from typing import Any
 from mado.dast_scanners.base import docker_available
 from mado.findings.schema import Finding, normalize_zap_alert
 
+# zap-baseline.py: 0 = no alerts, 1 = FAIL alerts, 2 = WARN alerts, 3+ = tool error.
+_ZAP_REPORT_EXIT_CODES = {0, 1, 2}
+
 
 def _iter_alert_dicts(node: Any) -> Any:
     """Yield every dict in a nested structure that looks like a ZAP alert."""
@@ -64,7 +67,7 @@ class ZapScanner:
             ]
 
             completed = subprocess.run(command, capture_output=True, text=True)
-            if completed.returncode != 0:
+            if completed.returncode not in _ZAP_REPORT_EXIT_CODES:
                 details = (
                     completed.stderr.strip()
                     or completed.stdout.strip()

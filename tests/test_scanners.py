@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from mado.scanners.bandit import BanditScanner
 from mado.scanners.dependencies import NpmAuditScanner, PipAuditScanner
-from mado.scanners.gitleaks import GitleaksScanner
+from mado.scanners.gitleaks import GitleaksScanner, gitleaks_records
 
 
 class _CompletedProcess:
@@ -56,8 +56,49 @@ class BanditScannerTests(unittest.TestCase):
 
 
 class GitleaksScannerTests(unittest.TestCase):
+    def test_records_accepts_official_json_list(self) -> None:
+        records = gitleaks_records(
+            [{"RuleID": "generic-api-key", "File": "config.py", "Secret": "sk_live_x", "StartLine": 5}]
+        )
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["File"], "config.py")
+
+    def test_records_accepts_findings_wrapper(self) -> None:
+        records = gitleaks_records({"Findings": [{"File": "a.py"}]})
+        self.assertEqual(records[0]["File"], "a.py")
+        records = gitleaks_records({"findings": [{"File": "b.py"}]})
+        self.assertEqual(records[0]["File"], "b.py")
+
+    def test_records_ignores_invalid_payloads(self) -> None:
+        self.assertEqual(gitleaks_records(None), [])
+        self.assertEqual(gitleaks_records("nope"), [])
+        self.assertEqual(gitleaks_records({"other": []}), [])
+
     @patch("mado.scanners.gitleaks.resolve_binary", return_value="/usr/bin/gitleaks")
-    def test_run_normalizes_report(self, _mock_resolve: object) -> None:
+    def test_run_normalizes_report_list(self, _mock_resolve: object) -> None:
+        leak = {
+            "RuleID": "generic-api-key",
+            "Description": "Detected API key",
+            "StartLine": 5,
+            "File": "config.py",
+            "Secret": "sk_live_x",
+        }
+
+        def fake_run(command, capture_output, text):
+            report_path = command[command.index("--report-path") + 1]
+            Path(report_path).write_text(json.dumps([leak]), encoding="utf-8")
+            return _CompletedProcess(1)
+
+        with patch("mado.scanners.gitleaks.subprocess.run", side_effect=fake_run):
+            findings = GitleaksScanner().run(".")
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].scanner, "gitleaks")
+        self.assertEqual(findings[0].cwe, "CWE-798")
+        self.assertEqual(findings[0].file, "config.py")
+
+    @patch("mado.scanners.gitleaks.resolve_binary", return_value="/usr/bin/gitleaks")
+    def test_run_normalizes_findings_wrapper(self, _mock_resolve: object) -> None:
         findings_payload = {
             "Findings": [
                 {
@@ -79,8 +120,6 @@ class GitleaksScannerTests(unittest.TestCase):
             findings = GitleaksScanner().run(".")
 
         self.assertEqual(len(findings), 1)
-        self.assertEqual(findings[0].scanner, "gitleaks")
-        self.assertEqual(findings[0].cwe, "CWE-798")
         self.assertEqual(findings[0].file, "config.py")
 
     @patch("mado.scanners.gitleaks.resolve_binary", return_value=None)

@@ -260,22 +260,18 @@ Relevant OWASP/CWE context:
 {chr(10).join(f'- {c}' for c in context)}
 
 Please answer the question based on the above finding context."""
-        try:
-            response = client._get_client().messages.create(
-                model=client.model,
-                max_tokens=1024,
-                system="""You are a security expert helping a developer understand a vulnerability.
-Provide a clear, concise answer based on the provided context. If the context doesn't contain the answer,
-say you don't have enough information rather than making things up.""",
-                messages=[{"role": "user", "content": user_prompt}],
-            )
-        except Exception as exc:
-            error_console.print("[red]error:[/red] Failed to get LLM response.")
-            raise typer.Exit(code=1) from exc
-
-        text = "".join(
-            block.text for block in response.content if getattr(block, "type", "") == "text"
+        text = client.complete(
+            system=(
+                "You are a security expert helping a developer understand a vulnerability. "
+                "Provide a clear, concise answer based on the provided context. If the context "
+                "doesn't contain the answer, say you don't have enough information rather than "
+                "making things up."
+            ),
+            user=user_prompt,
         )
+        if text is None:
+            error_console.print("[red]error:[/red] Failed to get LLM response.")
+            raise typer.Exit(code=1)
         console.print(f"[bold]Answer[/bold] {text}")
     else:
         # Fall back to knowledge base

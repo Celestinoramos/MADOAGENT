@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,7 +8,7 @@ from unittest.mock import patch
 
 from mado.config import Config
 from mado.findings.schema import Finding
-from mado.orchestrator import ScanResult, run_orchestrator, run_scan
+from mado.orchestrator import ScanResult, _git_changed_files, run_orchestrator, run_scan
 
 
 class _FakeScanner:
@@ -92,6 +93,25 @@ class OrchestratorTests(unittest.TestCase):
                 scanner = _FakeScanner([_finding("ERROR")])
                 result = run_scan(str(root), diff=True, scanners=[scanner])
                 self.assertEqual(len(result.findings), 1)
+
+    def test_git_changed_files_diffs_against_head(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.email", "mado@test"], cwd=root, check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.name", "mado"], cwd=root, check=True, capture_output=True)
+            (root / "keep.py").write_text("a = 1\n", encoding="utf-8")
+            subprocess.run(["git", "add", "keep.py"], cwd=root, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "-c", "commit.gpgsign=false", "commit", "-m", "init"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+            )
+            (root / "staged.py").write_text("b = 2\n", encoding="utf-8")
+            subprocess.run(["git", "add", "staged.py"], cwd=root, check=True, capture_output=True)
+            changed = _git_changed_files(str(root))
+            self.assertTrue(any(Path(path).name == "staged.py" for path in changed))
 
     @patch("mado.explanations.engine.llm_enabled", return_value=False)
     def test_non_code_findings_are_filtered(self, _mock_llm: object) -> None:

@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -88,7 +88,8 @@ class _ConfigBase(BaseModel):
 
     severity_threshold: str = Field("low", description="Minimum severity (low|medium|high|critical)")
 
-    @validator("severity_threshold")
+    @field_validator("severity_threshold")
+    @classmethod
     def _validate_severity_threshold(cls, v: str) -> str:
         if v not in _VALID_SEVERITY_LEVELS:
             raise ValueError(
@@ -196,7 +197,7 @@ code_extensions:              # SAST findings are kept only for these extensions
 cache_ttl_days: 30          # reuse cached explanations for this many days (null = forever)
 llm:
   enabled: true                    # set to false to force deterministic explanations
-  provider: anthropic
+  provider: groq
   model: mixtral-8x7b-32768        # a chave vai em GROQ_API_KEY (env ou .env), nunca aqui
 dast:
   enable_zap: true

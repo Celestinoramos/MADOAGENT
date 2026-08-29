@@ -114,6 +114,10 @@ class NormalizerTests(unittest.TestCase):
     def test_severity_helpers(self) -> None:
         self.assertEqual(normalize_severity("ERROR"), "high")
         self.assertEqual(normalize_severity("WARNING"), "medium")
+        self.assertEqual(normalize_severity("crítica"), "critical")
+        self.assertEqual(normalize_severity("alta"), "high")
+        self.assertEqual(normalize_severity("média"), "medium")
+        self.assertEqual(normalize_severity("baixa"), "low")
         self.assertTrue(meets_severity_threshold("high", "medium"))
         self.assertFalse(meets_severity_threshold("low", "medium"))
 

@@ -17,7 +17,7 @@ Responde APENAS em JSON válido, sem markdown, com este schema:
   "summary": "resumo curto do problema",
   "root_cause": "porque é que isto é uma falha",
   "impact": "impacto real da vulnerabilidade",
-  "severity": "critica|alta|media|baixa",
+  "severity": "critical|high|medium|low",
   "remediation": "sugestão de correção concreta",
   "references": ["url1", "url2"]
 }

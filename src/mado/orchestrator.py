@@ -46,6 +46,9 @@ def _git_changed_files(path: str) -> list[str]:
 
     If the path is not a Git repository or Git is unavailable, an empty list
     is returned so the caller can fall back to scanning the whole tree.
+
+    ``git diff HEAD`` includes both staged and unstaged changes versus the last
+    commit. Deleted paths are skipped.
     """
 
     repo = Path(path).resolve()
@@ -53,14 +56,26 @@ def _git_changed_files(path: str) -> list[str]:
         repo = repo.parent
 
     try:
-        completed = subprocess.run(["git", "-C", str(repo), "diff", "--name-only"], capture_output=True, text=True)
+        completed = subprocess.run(
+            ["git", "-C", str(repo), "diff", "HEAD", "--name-only"],
+            capture_output=True,
+            text=True,
+        )
     except FileNotFoundError:
         return []
 
     if completed.returncode != 0:
         return []
 
-    return [str((repo / line.strip()).resolve()) for line in completed.stdout.splitlines() if line.strip()]
+    changed: list[str] = []
+    for line in completed.stdout.splitlines():
+        relative = line.strip()
+        if not relative:
+            continue
+        absolute = (repo / relative).resolve()
+        if absolute.exists():
+            changed.append(str(absolute))
+    return changed
 
 
 def _matches_ignore(file_path: str, scan_root: Path, ignore_paths: list[str]) -> bool:
@@ -153,7 +168,7 @@ def run_scan(
     stacks.update(detect_stack(changed))
     stacks = {stack for stack in stacks if stack}
 
-    missing = missing_scanners_for_stack(stacks)
+    missing = missing_scanners_for_stack(stacks, active_config)
     if missing:
         warnings.append(
             "Scanners not installed (skipped): "

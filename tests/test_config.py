@@ -60,6 +60,7 @@ class ConfigTests(unittest.TestCase):
         parsed = yaml.safe_load(render_example_config())
         self.assertIn("severity_threshold", parsed)
         self.assertIn("scanners", parsed)
+        self.assertEqual(parsed["llm"]["provider"], "groq")
 
 
 if __name__ == "__main__":

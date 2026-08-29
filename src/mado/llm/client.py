@@ -43,7 +43,7 @@ def llm_enabled() -> bool:
     if not os.environ.get("GROQ_API_KEY"):
         return False
     try:
-        from groq import Groq  # type: ignore[import-not-found]  # noqa: F401
+        from groq import Groq  # noqa: F401
     except ImportError:
         return False
     return True
@@ -72,15 +72,29 @@ class LlmClient:
             self._client = Groq(api_key=self.api_key)
         return self._client
 
+    def complete(self, *, system: str, user: str, max_tokens: int = 1024) -> str | None:
+        """Return the model text, or ``None`` when the backend is unusable."""
+        if not self.available:
+            return None
+        try:
+            response = self._get_client().chat.completions.create(
+                model=self.model,
+                max_tokens=max_tokens,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+            )
+        except Exception:
+            return None
+        return _message_text(response)
+
     def explain(self, finding: Finding, retrieved_context: list[str] | None = None) -> dict[str, Any] | None:
         """Ask the model for a structured explanation of a finding.
 
         Returns a dict matching the explanation schema, or ``None`` when the
         backend is not available or the response cannot be parsed.
         """
-
-        if not self.available:
-            return None
 
         context = retrieved_context if retrieved_context is not None else retrieve_context(finding)
         user_prompt = build_user_prompt(
@@ -91,18 +105,9 @@ class LlmClient:
             code_snippet=finding.code_snippet,
             retrieved_context=context,
         )
-
-        try:
-            response = self._get_client().chat.completions.create(
-                model=self.model,
-                max_tokens=1024,
-                system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": user_prompt}],
-            )
-        except Exception:
+        text = self.complete(system=SYSTEM_PROMPT, user=user_prompt)
+        if text is None:
             return None
-
-        text = "".join(block.text for block in response.content if getattr(block, "type", "") == "text")
         return self._parse_json(text)
 
     @staticmethod
@@ -127,6 +132,20 @@ class LlmClient:
         if not isinstance(parsed, dict):
             return None
         return parsed
+
+
+def _message_text(response: Any) -> str | None:
+    """Extract assistant text from a Groq ``chat.completions`` response."""
+    choices = getattr(response, "choices", None)
+    if not choices:
+        return None
+    message = getattr(choices[0], "message", None)
+    if message is None:
+        return None
+    content = getattr(message, "content", None)
+    if isinstance(content, str) and content.strip():
+        return content
+    return None
 
 
 def enrich_with_llm(finding: Finding) -> dict[str, Any] | None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import unicodedata
 from collections.abc import Iterable
 from collections.abc import Iterable as IterableABC
 from dataclasses import dataclass, field
@@ -116,20 +117,36 @@ _SEVERITY_RANK = {
 
 _RAW_SEVERITY_MAP = {
     "CRITICAL": "critical",
+    "CRITICA": "critical",
     "ERROR": "high",
     "HIGH": "high",
+    "ALTA": "high",
     "WARNING": "medium",
     "MEDIUM": "medium",
+    "MEDIA": "medium",
     "INFO": "low",
     "LOW": "low",
+    "BAIXA": "low",
     "NONE": "unknown",
 }
 
 
+def _severity_key(severity_raw: str) -> str:
+    folded = unicodedata.normalize("NFKD", severity_raw.strip())
+    ascii_only = folded.encode("ascii", "ignore").decode("ascii")
+    return ascii_only.upper()
+
+
 def normalize_severity(severity_raw: str) -> str:
-    """Map a raw scanner severity into a normalized level."""
-    cleaned = severity_raw.strip().upper()
-    return _RAW_SEVERITY_MAP.get(cleaned, severity_raw.strip().lower() or "unknown")
+    """Map a raw scanner or LLM severity into a normalized English level."""
+    cleaned = severity_raw.strip()
+    if not cleaned:
+        return "unknown"
+    mapped = _RAW_SEVERITY_MAP.get(_severity_key(cleaned))
+    if mapped:
+        return mapped
+    lowered = cleaned.lower()
+    return lowered if lowered in _SEVERITY_RANK else "unknown"
 
 
 def severity_rank(severity: str) -> int:

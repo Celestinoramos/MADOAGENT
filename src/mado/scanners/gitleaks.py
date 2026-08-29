@@ -7,9 +7,25 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from mado.findings.schema import Finding, normalize_gitleaks_result
 from mado.scanners.base import resolve_binary
+
+
+def gitleaks_records(payload: Any) -> list[dict[str, Any]]:
+    """Extract leak objects from a Gitleaks JSON report.
+
+    Official ``--report-format json`` writes a list of findings. Some wrappers
+    nest the same objects under ``Findings`` / ``findings``.
+    """
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if isinstance(payload, dict):
+        nested = payload.get("Findings", payload.get("findings"))
+        if isinstance(nested, list):
+            return [item for item in nested if isinstance(item, dict)]
+    return []
 
 
 @dataclass(slots=True)
@@ -52,18 +68,16 @@ class GitleaksScanner:
             details = completed.stderr.strip() or completed.stdout.strip() or "gitleaks exited with an unexpected error"
             raise RuntimeError(f"Gitleaks execution failed (exit code {completed.returncode}): {details}")
 
-        report: dict = {}
         try:
-            report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+            raw_text = Path(report_path).read_text(encoding="utf-8").strip()
+            payload: Any = json.loads(raw_text) if raw_text else []
         except (json.JSONDecodeError, OSError):
-            report = {}
+            payload = []
         finally:
             Path(report_path).unlink(missing_ok=True)
 
         findings: list[Finding] = []
-        for raw_finding in report.get("Findings", []):
-            if not isinstance(raw_finding, dict):
-                continue
+        for raw_finding in gitleaks_records(payload):
             try:
                 findings.append(normalize_gitleaks_result(raw_finding))
             except ValueError:
