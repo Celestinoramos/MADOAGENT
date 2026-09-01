@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import unicodedata
 from collections.abc import Iterable
 from collections.abc import Iterable as IterableABC
 from dataclasses import dataclass, field
@@ -116,20 +117,36 @@ _SEVERITY_RANK = {
 
 _RAW_SEVERITY_MAP = {
     "CRITICAL": "critical",
+    "CRITICA": "critical",
     "ERROR": "high",
     "HIGH": "high",
+    "ALTA": "high",
     "WARNING": "medium",
     "MEDIUM": "medium",
+    "MEDIA": "medium",
     "INFO": "low",
     "LOW": "low",
+    "BAIXA": "low",
     "NONE": "unknown",
 }
 
 
+def _severity_key(severity_raw: str) -> str:
+    folded = unicodedata.normalize("NFKD", severity_raw.strip())
+    ascii_only = folded.encode("ascii", "ignore").decode("ascii")
+    return ascii_only.upper()
+
+
 def normalize_severity(severity_raw: str) -> str:
-    """Map a raw scanner severity into a normalized level."""
-    cleaned = severity_raw.strip().upper()
-    return _RAW_SEVERITY_MAP.get(cleaned, severity_raw.strip().lower() or "unknown")
+    """Map a raw scanner or LLM severity into a normalized English level."""
+    cleaned = severity_raw.strip()
+    if not cleaned:
+        return "unknown"
+    mapped = _RAW_SEVERITY_MAP.get(_severity_key(cleaned))
+    if mapped:
+        return mapped
+    lowered = cleaned.lower()
+    return lowered if lowered in _SEVERITY_RANK else "unknown"
 
 
 def severity_rank(severity: str) -> int:
@@ -223,9 +240,9 @@ def normalize_gitleaks_result(result: dict[str, Any]) -> Finding:
     description = _first_non_empty([result.get("Description"), result.get("RuleID")]) or "Potential secret found"
     severity = _first_non_empty([result.get("Severity"), result.get("severity")]) or "WARNING"
 
-    snippet = None
-    if isinstance(secret, str):
-        snippet = secret if len(secret) < 200 else secret[:80] + "..." + secret[-20:]
+    fingerprint = None
+    if isinstance(secret, str) and secret:
+        fingerprint = hashlib.sha256(secret.encode("utf-8")).hexdigest()[:12]
 
     return _make_finding(
         file=path,
@@ -235,8 +252,8 @@ def normalize_gitleaks_result(result: dict[str, Any]) -> Finding:
         cwe="CWE-798",
         severity_raw=severity,
         message_raw=f"{description} (rule {result.get('RuleID')})" if result.get("RuleID") else description,
-        code_snippet=snippet,
-        extra={"match": result.get("Match")},
+        code_snippet="[REDACTED]",
+        extra={"secret_fingerprint": fingerprint},
     )
 
 

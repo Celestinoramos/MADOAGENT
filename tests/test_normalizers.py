@@ -52,6 +52,8 @@ class NormalizerTests(unittest.TestCase):
         self.assertEqual(finding.cwe, "CWE-798")
         self.assertEqual(finding.line, 12)
         self.assertIn("AWS Access Token", finding.message_raw)
+        self.assertEqual(finding.code_snippet, "[REDACTED]")
+        self.assertNotIn("AKIAIOSFODNN7EXAMPLE", str(finding.extra))
 
     def test_pip_audit(self) -> None:
         dependency = {"name": "requests", "version": "2.19.1", "vulns": []}
@@ -114,6 +116,10 @@ class NormalizerTests(unittest.TestCase):
     def test_severity_helpers(self) -> None:
         self.assertEqual(normalize_severity("ERROR"), "high")
         self.assertEqual(normalize_severity("WARNING"), "medium")
+        self.assertEqual(normalize_severity("crítica"), "critical")
+        self.assertEqual(normalize_severity("alta"), "high")
+        self.assertEqual(normalize_severity("média"), "medium")
+        self.assertEqual(normalize_severity("baixa"), "low")
         self.assertTrue(meets_severity_threshold("high", "medium"))
         self.assertFalse(meets_severity_threshold("low", "medium"))
 

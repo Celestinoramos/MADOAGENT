@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import sys
-from dataclasses import asdict, replace
 from pathlib import Path
 
 import typer
@@ -14,6 +13,7 @@ from mado.config import Config, load_config, load_config_file, render_example_co
 from mado.explanations import explain_finding
 from mado.explanations.knowledge_base import lookup_entry
 from mado.findings.ignore import IgnoreList
+from mado.findings.store import LastScanStore
 from mado.graph.graph_orchestrator import GraphOrchestrator
 from mado.graph.state import AbortScan, Target
 from mado.llm.client import LlmClient, llm_enabled
@@ -23,6 +23,7 @@ from mado.report.models import Report
 from mado.report.renderer import (
     render_report_json,
     render_report_markdown,
+    render_report_sarif,
     render_report_terminal,
 )
 from mado.watch import WatchMode
@@ -72,8 +73,8 @@ def scan(
 ) -> None:
     """Scan a project (static) or a running application (dynamic)."""
 
-    if format.lower() not in {"terminal", "json", "md"}:
-        raise typer.BadParameter("format must be terminal, json or md")
+    if format.lower() not in {"terminal", "json", "md", "sarif"}:
+        raise typer.BadParameter("format must be terminal, json, md or sarif")
 
     try:
         if target is not None:
@@ -85,24 +86,27 @@ def scan(
             report = _scan_static(str(path), diff=diff, severity=severity, config_path=config_path)
     except AbortScan as exc:
         error_console.print(f"[red]aborted:[/red] {exc}")
-        raise typer.Exit(code=1) from exc
+        raise typer.Exit(code=2) from exc
     except RuntimeError as exc:
         error_console.print(f"[red]error:[/red] {exc}")
-        raise typer.Exit(code=1) from exc
+        raise typer.Exit(code=2) from exc
 
+    LastScanStore(path if target is None else Path(".")).save(report)
     rendered = _render_report(report, format)
-    if rendered is None:
-        return
-    if output:
-        Path(output).write_text(rendered, encoding="utf-8")
-    else:
-        sys.stdout.write(rendered + "\n")
+    if rendered is not None:
+        if output:
+            Path(output).write_text(rendered, encoding="utf-8")
+        else:
+            sys.stdout.write(rendered + "\n")
+
+    if report.findings:
+        raise typer.Exit(code=1)
 
 
 def _scan_watch(path: str, severity: str | None, config_path: str | None) -> None:
     config = _resolve_config(Path(path), config_path)
     if severity:
-        config = replace(config, severity_threshold=severity)
+        config = config.model_copy(update={"severity_threshold": severity})
 
     def trigger() -> None:
         result = run_scan(path, diff=True, config=config)
@@ -117,7 +121,7 @@ def _scan_watch(path: str, severity: str | None, config_path: str | None) -> Non
 def _scan_static(path: str, diff: bool, severity: str | None, config_path: str | None) -> Report:
     config = _resolve_config(Path(path), config_path)
     if severity:
-        config = replace(config, severity_threshold=severity)
+        config = config.model_copy(update={"severity_threshold": severity})
     result = run_scan(path, diff=diff, config=config)
     _print_warnings(result.warnings)
     return Report.from_findings(Path(path).resolve().name, result.findings)
@@ -148,26 +152,41 @@ def _render_report(report: Report, format: str) -> str | None:
         return render_report_json(report)
     if format == "md":
         return render_report_markdown(report)
+    if format == "sarif":
+        return render_report_sarif(report)
     render_report_terminal(report)
     return None
+
+
+def _load_or_rescan(path: Path, rescan: bool) -> tuple[Report, list[str]]:
+    if not rescan:
+        stored = LastScanStore(path).load()
+        if stored is not None:
+            return stored, []
+        raise RuntimeError("No saved scan found. Run 'mado scan' first or pass --rescan.")
+    result = run_scan(str(path))
+    report = Report.from_findings(path.resolve().name, result.findings)
+    LastScanStore(path).save(report)
+    return report, result.warnings
 
 
 @app.command()
 def explain(
     finding_id: str,
     path: Path = typer.Option(Path("."), "--path", exists=True, file_okay=True, dir_okay=True, readable=True),
+    rescan: bool = typer.Option(False, "--rescan", help="Run a fresh scan instead of using the saved scan"),
 ) -> None:
-    """Explain a specific finding by re-running the scan for the target path."""
+    """Explain a finding from the most recent scan."""
 
     try:
-        result = run_scan(str(path))
+        saved_report, warnings = _load_or_rescan(path, rescan)
     except RuntimeError as exc:
         error_console.print(f"[red]error:[/red] {exc}")
         raise typer.Exit(code=1) from exc
 
-    _print_warnings(result.warnings)
+    _print_warnings(warnings)
 
-    finding = next((item for item in result.findings if item.id == finding_id), None)
+    finding = next((item for item in saved_report.findings if item.id == finding_id), None)
     if finding is None:
         error_console.print(f"Finding {finding_id} not found under {path}")
         raise typer.Exit(code=1)
@@ -197,19 +216,19 @@ def ask(
         None, "--finding", help="Explain a specific finding by ID (requires scan first)"
     ),
     path: Path = typer.Option(Path("."), "--path", exists=True, file_okay=True, dir_okay=True, readable=True),
+    rescan: bool = typer.Option(False, "--rescan", help="Run a fresh scan instead of using the saved scan"),
 ) -> None:
     """Ask a question about detected vulnerabilities, answered via RAG or LLM."""
 
+    try:
+        saved_report, warnings = _load_or_rescan(path, rescan)
+    except RuntimeError as exc:
+        error_console.print(f"[red]error:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    _print_warnings(warnings)
+
     if finding_id:
-        try:
-            result = run_scan(str(path))
-        except RuntimeError as exc:
-            error_console.print(f"[red]error:[/red] {exc}")
-            raise typer.Exit(code=1) from exc
-
-        _print_warnings(result.warnings)
-
-        finding = next((item for item in result.findings if item.id == finding_id), None)
+        finding = next((item for item in saved_report.findings if item.id == finding_id), None)
         if finding is None:
             error_console.print(f"Finding {finding_id} not found under {path}")
             raise typer.Exit(code=1)
@@ -229,53 +248,43 @@ def ask(
                 console.print(f"- {reference}")
         return
 
-    # General question - use RAG + LLM
-    try:
-        result = run_scan(str(path))
-    except RuntimeError as exc:
-        error_console.print(f"[red]error:[/red] {exc}")
-        raise typer.Exit(code=1) from exc
-
-    _print_warnings(result.warnings)
-
-    if not result.findings:
+    if not saved_report.findings:
         error_console.print("[red]error:[/red] No findings detected. Run a scan first or provide --finding.")
         raise typer.Exit(code=1)
 
-    # Use the first finding's context for the answer
-    finding = result.findings[0]
-    context = retrieve_context(finding)
+    finding = saved_report.findings[0]
+    context: list[str] = []
+    for item in saved_report.findings[:10]:
+        context.extend(retrieve_context(item, top_k=1))
+    context = list(dict.fromkeys(context))
 
     if llm_enabled():
         client = LlmClient()
+        finding_lines = "\n".join(
+            f"- {item.id}: {item.rule_id or '-'} / {item.cwe or '-'} / {item.severity_raw}: {item.message_raw}"
+            for item in saved_report.findings[:10]
+        )
         user_prompt = f"""Question: {question}
 
-Finding context:
-- Rule ID: {finding.rule_id or '-'}
-- CWE: {finding.cwe or '-'}
-- Severity: {finding.severity_raw}
-- Message: {finding.message_raw}
+Detected findings:
+{finding_lines}
 
 Relevant OWASP/CWE context:
-{chr(10).join(f'- {c}' for c in context)}
+{chr(10).join(f"- {c}" for c in context)}
 
 Please answer the question based on the above finding context."""
-        try:
-            response = client._get_client().messages.create(
-                model=client.model,
-                max_tokens=1024,
-                system="""You are a security expert helping a developer understand a vulnerability.
-Provide a clear, concise answer based on the provided context. If the context doesn't contain the answer,
-say you don't have enough information rather than making things up.""",
-                messages=[{"role": "user", "content": user_prompt}],
-            )
-        except Exception as exc:
-            error_console.print("[red]error:[/red] Failed to get LLM response.")
-            raise typer.Exit(code=1) from exc
-
-        text = "".join(
-            block.text for block in response.content if getattr(block, "type", "") == "text"
+        text = client.complete(
+            system=(
+                "You are a security expert helping a developer understand a vulnerability. "
+                "Provide a clear, concise answer based on the provided context. If the context "
+                "doesn't contain the answer, say you don't have enough information rather than "
+                "making things up."
+            ),
+            user=user_prompt,
         )
+        if text is None:
+            error_console.print("[red]error:[/red] Failed to get LLM response.")
+            raise typer.Exit(code=1)
         console.print(f"[bold]Answer[/bold] {text}")
     else:
         # Fall back to knowledge base
@@ -296,21 +305,26 @@ def report(
     path: Path = typer.Argument(Path("."), exists=True, file_okay=True, dir_okay=True, readable=True),
     format: str = typer.Option("md", "--format", case_sensitive=False),
     output: str = typer.Option(None, "--output", help="Write the report to a file"),
+    rescan: bool = typer.Option(False, "--rescan", help="Run a fresh scan instead of using the saved scan"),
 ) -> None:
-    """Generate a report from a fresh scan of the project."""
+    """Render the most recent project scan."""
 
-    if format.lower() not in {"md", "json"}:
-        raise typer.BadParameter("format must be md or json")
+    if format.lower() not in {"md", "json", "sarif"}:
+        raise typer.BadParameter("format must be md, json or sarif")
 
     try:
-        result = run_scan(str(path))
+        report_data, warnings = _load_or_rescan(path, rescan)
     except RuntimeError as exc:
         error_console.print(f"[red]error:[/red] {exc}")
         raise typer.Exit(code=1) from exc
 
-    _print_warnings(result.warnings)
-    report_data = Report.from_findings(Path(path).resolve().name, result.findings)
-    rendered = render_report_json(report_data) if format == "json" else render_report_markdown(report_data)
+    _print_warnings(warnings)
+    if format == "json":
+        rendered = render_report_json(report_data)
+    elif format == "sarif":
+        rendered = render_report_sarif(report_data)
+    else:
+        rendered = render_report_markdown(report_data)
     if output:
         Path(output).write_text(rendered, encoding="utf-8")
     else:
@@ -324,6 +338,7 @@ def ignore(
     remove: str = typer.Option(None, "--remove", help="Remove a finding id from the ignore list"),
     show_list: bool = typer.Option(False, "--list", help="List ignored finding ids"),
     clear: bool = typer.Option(False, "--clear", help="Clear the whole ignore list"),
+    rescan: bool = typer.Option(False, "--rescan", help="Run a fresh scan instead of using the saved scan"),
 ) -> None:
     """Manage the false-positive ignore list (.mado/ignore.json)."""
 
@@ -357,12 +372,13 @@ def ignore(
         raise typer.Exit(code=1)
 
     try:
-        result = run_scan(str(path))
+        saved_report, warnings = _load_or_rescan(path, rescan)
     except RuntimeError as exc:
         error_console.print(f"[red]error:[/red] {exc}")
         raise typer.Exit(code=1) from exc
 
-    if not any(item.id == finding_id for item in result.findings):
+    _print_warnings(warnings)
+    if not any(item.id == finding_id for item in saved_report.findings):
         error_console.print(
             f"Finding {finding_id} not found in the scan of {path}. Check the id with 'mado scan' or 'mado explain'."
         )
@@ -396,7 +412,7 @@ def config_cmd(
     except RuntimeError as exc:
         error_console.print(f"[red]error:[/red] {exc}")
         raise typer.Exit(code=1) from exc
-    console.print(json.dumps(asdict(loaded), indent=2, ensure_ascii=False, default=str))
+    console.print(json.dumps(loaded.model_dump(), indent=2, ensure_ascii=False, default=str))
 
 
 if __name__ == "__main__":

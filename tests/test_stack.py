@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from mado.config import Config
 from mado.scanners.registry import detect_stack, detect_stack_for_path, select_scanners
@@ -43,7 +44,23 @@ class StackDetectionTests(unittest.TestCase):
         selected = select_scanners(".", {"python"}, config)
         for scanner in selected:
             if scanner.name in {"semgrep", "bandit"}:
-                self.assertEqual(scanner.exclude, ("tests",))
+                self.assertIn("tests", scanner.exclude)
+                self.assertNotIn("/etc", scanner.exclude)
+                self.assertNotIn("../outside", scanner.exclude)
+
+    def test_select_scanners_respects_disabled_flags(self) -> None:
+        config = Config(scanners={"semgrep": True, "bandit": False, "gitleaks": False, "dependencies": False})
+        with (
+            patch("mado.scanners.registry.SemgrepScanner.is_available", return_value=True),
+            patch("mado.scanners.registry.BanditScanner.is_available", return_value=True),
+            patch("mado.scanners.registry.GitleaksScanner.is_available", return_value=True),
+            patch("mado.scanners.registry.PipAuditScanner.is_available", return_value=True),
+        ):
+            names = {scanner.name for scanner in select_scanners(".", {"python"}, config)}
+        self.assertIn("semgrep", names)
+        self.assertNotIn("bandit", names)
+        self.assertNotIn("gitleaks", names)
+        self.assertNotIn("pip-audit", names)
 
 
 if __name__ == "__main__":

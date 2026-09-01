@@ -110,6 +110,13 @@ def _scanner_excludes(config: Any | None) -> tuple[str, ...]:
     return tuple(excludes)
 
 
+def _scanner_wanted(config: Any | None, name: str) -> bool:
+    """Return True when ``name`` is enabled (or when no config is provided)."""
+    if config is None:
+        return True
+    return bool(config.get_scanner_enabled(name))
+
+
 def select_scanners(path: str, stacks: set[str], config: Any | None = None) -> list[Scanner]:
     """Choose the active scanners for the detected stack.
 
@@ -117,41 +124,40 @@ def select_scanners(path: str, stacks: set[str], config: Any | None = None) -> l
     enabled in the configuration (when provided), and its binary is available.
     """
 
-    root = Path(path).resolve()
-    if root.is_file():
-        root = root.parent
-
-    enable_semgrep = bool(config and config.get_scanner_enabled("semgrep")) if config else True
     excludes = _scanner_excludes(config)
     enabled: list[Scanner] = []
-    if enable_semgrep and SemgrepScanner.is_available():
+    if _scanner_wanted(config, "semgrep") and SemgrepScanner.is_available():
         enabled.append(SemgrepScanner(exclude=excludes))
 
-    if GitleaksScanner.is_available():
+    if _scanner_wanted(config, "gitleaks") and GitleaksScanner.is_available():
         enabled.append(GitleaksScanner())
 
-    for stack in sorted(stacks):
-        for scanner_cls in _SAST_SCANNERS.get(stack, []):
-            if scanner_cls is SemgrepScanner:
-                continue
-            scanner = scanner_cls(exclude=excludes)
-            if scanner.is_available():
-                enabled.append(scanner)
+    if _scanner_wanted(config, "bandit"):
+        for stack in sorted(stacks):
+            for scanner_cls in _SAST_SCANNERS.get(stack, []):
+                if scanner_cls is SemgrepScanner:
+                    continue
+                scanner = scanner_cls(exclude=excludes)
+                if scanner.is_available():
+                    enabled.append(scanner)
 
-    dependency_scanners = DependencyScanner.for_stack(stacks)
-    enabled.extend(scanner for scanner in dependency_scanners if scanner.is_available())
+    if _scanner_wanted(config, "dependencies"):
+        dependency_scanners = DependencyScanner.for_stack(stacks)
+        enabled.extend(scanner for scanner in dependency_scanners if scanner.is_available())
     return enabled
 
 
-def missing_scanners_for_stack(stacks: set[str]) -> list[str]:
+def missing_scanners_for_stack(stacks: set[str], config: Any | None = None) -> list[str]:
     """Names of scanners that would apply to the stack but are not installed."""
     missing: list[str] = []
     if "python" in stacks:
-        if not BanditScanner.is_available():
+        if _scanner_wanted(config, "bandit") and not BanditScanner.is_available():
             missing.append("bandit")
-        if not PipAuditScanner.is_available():
+        if _scanner_wanted(config, "dependencies") and not PipAuditScanner.is_available():
             missing.append("pip-audit")
     if "node" in stacks:
-        if not NpmAuditScanner.is_available():
+        if _scanner_wanted(config, "dependencies") and not NpmAuditScanner.is_available():
             missing.append("npm")
+    if _scanner_wanted(config, "gitleaks") and not GitleaksScanner.is_available():
+        missing.append("gitleaks")
     return missing

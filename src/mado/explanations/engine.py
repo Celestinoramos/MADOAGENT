@@ -56,8 +56,8 @@ def _generate_explanation_payload(finding: Finding) -> dict:
         context = retrieve_context(finding, top_k=_TOP_K)
         llm_payload = LlmClient().explain(finding, context)
         if llm_payload is not None:
-            if "severity" not in llm_payload or not llm_payload["severity"]:
-                llm_payload["severity"] = normalize_severity(finding.severity_raw)
+            raw_severity = llm_payload.get("severity") or finding.severity_raw
+            llm_payload["severity"] = normalize_severity(str(raw_severity))
             return llm_payload
 
     entry = lookup_entry(finding.cwe, finding.rule_id)

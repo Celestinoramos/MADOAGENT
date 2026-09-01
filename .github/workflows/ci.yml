@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   checks:
     runs-on: ubuntu-latest
@@ -32,4 +36,16 @@ jobs:
         run: pip install semgrep bandit pip-audit
 
       - name: Self-scan (mado scan)
-        run: mado scan . --format json
+        id: self-scan
+        continue-on-error: true
+        run: mado scan . --severity critical --format sarif --output mado.sarif
+
+      - name: Upload Madó SARIF
+        if: always() && hashFiles('mado.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: mado.sarif
+
+      - name: Enforce self-scan result
+        if: steps.self-scan.outcome == 'failure'
+        run: exit 1

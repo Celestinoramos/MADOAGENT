@@ -1,4 +1,4 @@
-"""Rendering for findings and reports: terminal, markdown, JSON."""
+"""Rendering for findings and reports: terminal, Markdown, JSON and SARIF."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import json
 
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 from mado.findings.schema import Finding, normalize_severity
 from mado.report.models import Report
@@ -19,8 +20,25 @@ _SEVERITY_STYLES = {
 }
 
 
+_SEVERITY_COLUMN_WIDTH = 8
+_ID_COLUMN_WIDTH = 12
+_TABLE_CHROME_WIDTH = 13
+_MIN_FLEXIBLE_WIDTH = 34
+
+
 def _severity_style(severity: str) -> str:
     return _SEVERITY_STYLES.get(severity, "white")
+
+
+def _location(finding: Finding) -> str:
+    return finding.file if finding.line is None else f"{finding.file}:{finding.line}"
+
+
+def _summarize(message: str, limit: int) -> str:
+    collapsed = " ".join(message.split())
+    if len(collapsed) <= limit:
+        return collapsed
+    return collapsed[:limit].rsplit(" ", 1)[0] + "…"
 
 
 def render_findings_terminal(findings: list[Finding]) -> None:
@@ -31,26 +49,49 @@ def render_findings_terminal(findings: list[Finding]) -> None:
         console.print("[green]No findings returned.[/green]")
         return
 
+    # Widths are assigned up-front because rule ids and paths are unbreakable
+    # tokens: left to measure them, Rich collapses whole columns to zero width.
+    flexible_width = console.width - _TABLE_CHROME_WIDTH - _SEVERITY_COLUMN_WIDTH - _ID_COLUMN_WIDTH
+    if flexible_width < _MIN_FLEXIBLE_WIDTH:
+        _render_findings_stacked(console, findings)
+        return
+
+    location_width = max(16, min(40, flexible_width * 2 // 5))
+    issue_width = flexible_width - location_width
+
     table = Table(title="Madó findings")
-    table.add_column("Severity", no_wrap=True)
-    table.add_column("ID", style="cyan", no_wrap=True)
-    table.add_column("File", style="white")
-    table.add_column("Line", style="white", no_wrap=True)
-    table.add_column("Rule", style="white")
-    table.add_column("Message", style="white", no_wrap=True)
+    table.add_column("Severity", width=_SEVERITY_COLUMN_WIDTH, no_wrap=True)
+    table.add_column("ID", style="cyan", width=_ID_COLUMN_WIDTH, no_wrap=True)
+    table.add_column("Location", style="white", width=location_width, overflow="fold")
+    table.add_column("Issue", style="white", width=issue_width, overflow="fold")
 
     for finding in findings:
         severity = normalize_severity(finding.severity_raw)
+        issue = Text(_summarize(finding.message_raw, max(220, issue_width * 3)))
+        if finding.rule_id:
+            issue.append(f"\n{finding.rule_id}", style="dim")
         table.add_row(
-            f"[{_severity_style(severity)}]{severity.upper()}[/{_severity_style(severity)}]",
+            Text(severity.upper(), style=_severity_style(severity)),
             finding.id,
-            finding.file,
-            str(finding.line) if finding.line is not None else "-",
-            finding.rule_id or "-",
-            finding.message_raw,
+            _location(finding),
+            issue,
         )
 
     console.print(table)
+
+
+def _render_findings_stacked(console: Console, findings: list[Finding]) -> None:
+    """Render findings one per block, for terminals too narrow for a table."""
+    for finding in findings:
+        severity = normalize_severity(finding.severity_raw)
+        console.print(
+            f"[{_severity_style(severity)}]{severity.upper()}[/{_severity_style(severity)}] [cyan]{finding.id}[/cyan]"
+        )
+        console.print(f"  {_location(finding)}", overflow="fold")
+        console.print(f"  {_summarize(finding.message_raw, 200)}", overflow="fold")
+        if finding.rule_id:
+            console.print(f"  [dim]{finding.rule_id}[/dim]", overflow="fold")
+        console.print()
 
 
 def render_findings_json(findings: list[Finding]) -> str:
@@ -150,12 +191,75 @@ def render_report_json(report: Report) -> str:
     return json.dumps(report.to_dict(), indent=2, ensure_ascii=False)
 
 
+def render_report_sarif(report: Report) -> str:
+    """Serialize a report as SARIF 2.1.0 for code-scanning integrations."""
+    rules: dict[str, dict] = {}
+    results: list[dict] = []
+    for finding in report.findings:
+        rule_id = finding.rule_id or f"{finding.scanner}.unknown"
+        rules.setdefault(
+            rule_id,
+            {
+                "id": rule_id,
+                "name": rule_id,
+                "shortDescription": {"text": finding.message_raw},
+                "properties": {
+                    "scanner": finding.scanner,
+                    "cwe": finding.cwe,
+                },
+            },
+        )
+        location: dict = {
+            "physicalLocation": {
+                "artifactLocation": {"uri": finding.file},
+            }
+        }
+        if finding.line is not None:
+            location["physicalLocation"]["region"] = {"startLine": finding.line}
+        results.append(
+            {
+                "ruleId": rule_id,
+                "level": _sarif_level(normalize_severity(finding.severity_raw)),
+                "message": {"text": finding.message_raw},
+                "locations": [location],
+                "partialFingerprints": {"madoFindingId": finding.id},
+            }
+        )
+    payload = {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "Madó",
+                        "informationUri": "https://github.com/Celestinoramos/MADOAGENT",
+                        "rules": list(rules.values()),
+                    }
+                },
+                "results": results,
+            }
+        ],
+    }
+    return json.dumps(payload, indent=2, ensure_ascii=False)
+
+
+def _sarif_level(severity: str) -> str:
+    if severity in {"critical", "high"}:
+        return "error"
+    if severity == "medium":
+        return "warning"
+    return "note"
+
+
 def render_findings(findings: list[Finding], format: str) -> str | None:
     """Render findings in a given format, returning text for md/json."""
     if format == "json":
         return render_findings_json(findings)
     if format == "md":
         return render_findings_markdown(findings)
+    if format == "sarif":
+        return render_report_sarif(Report.from_findings("", findings))
     render_findings_terminal(findings)
     return None
 
@@ -166,5 +270,7 @@ def serialize_report(report: Report, format: str) -> str:
         return render_report_json(report)
     if format == "md":
         return render_report_markdown(report)
+    if format == "sarif":
+        return render_report_sarif(report)
     render_report_terminal(report)
     return ""

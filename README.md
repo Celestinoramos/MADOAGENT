@@ -24,11 +24,14 @@ Modo dinâmico (mado scan --target): CLI → Orquestrador (Graph) → Recon → 
 - **`mado scan --target URL [--openapi SPEC] [--postman COLL]`** — modo dinâmico (DAST): confirmação de autorização → reconhecimento (OpenAPI/Postman/crawl) → ZAP (Docker) + Nuclei → relatório.
 - **`mado explain FINDING_ID`** — explicação aprofundada de um finding (causa raiz, impacto, severidade, correção, referências).
 - **`mado ask "pergunta" [--finding ID]`** — pergunta sobre vulnerabilidades, respondida via RAG + LLM (ou base de conhecimento local).
-- **`mado report --format md|json --output FILE`** — relatório markdown/JSON pronto para anexar ao projeto.
+- **`mado report --format md|json|sarif --output FILE`** — relatório Markdown, JSON ou SARIF pronto para CI.
 - **`mado ignore FINDING_ID`** — regista falsos positivos para não reaparecerem em scans futuros (`--list`, `--remove`, `--clear`).
 - **`mado scan --watch`** — re-scan automático ao gravar ficheiros (via watchdog, com debounce).
 - **`mado config --init`** — cria `.mado.yml` com defaults; `mado config` mostra a configuração efetiva.
 - RAG local com OWASP Top 10 + CWE; explicações via LLM (Groq) quando `GROQ_API_KEY` está definida, com fallback à base de conhecimento local e cache `.mado/cache.json`.
+
+Cada scan guarda `.mado/last-scan.json`. Os comandos `explain`, `ask`, `report`
+e `ignore` reutilizam esse resultado; passa `--rescan` para forçar uma nova análise.
 
 ## Instalação
 
@@ -95,6 +98,7 @@ mado scan .                          # análise estática completa
 mado scan . --diff                   # só ficheiros alterados
 mado scan . --format json            # output em JSON
 mado scan . --format md --output relatorio.md
+mado scan . --format sarif --output mado.sarif
 mado scan . --severity high          # ignora findings abaixo de high
 mado scan . --watch                  # re-scan automático ao gravar ficheiros
 mado explain f_8f2a1c                # explica um finding específico
@@ -113,6 +117,12 @@ mado scan --target http://localhost:8000
 ```
 
 O modo dinâmico pede sempre confirmação explícita de autorização antes de correr testes ativos. A flag `--yes-i-accept-risks` contorna o guardrail para uso em CI/CD — usa-a apenas quando souberes o que estás a fazer.
+Por segurança, o host também tem de constar em `dast.allowed_hosts`; os defaults
+aceitam apenas loopback. Adiciona explicitamente os hosts de staging autorizados.
+
+O comando `scan` usa exit codes próprios para automação: `0` quando não há
+findings acima do threshold, `1` quando existem findings e `2` quando o scan
+é abortado ou ocorre um erro de execução.
 
 ## Exemplo de saída
 
@@ -183,6 +193,11 @@ dast:
   enable_zap: true
   enable_nuclei: true
   zap_image: zaproxy/zap-stable
+  timeout_seconds: 300
+  max_routes: 25
+  allowed_hosts:
+    - localhost
+    - 127.0.0.1
 ```
 
 A configuração é procurada a partir do diretório alvo e diretórios-pai até 4 níveis; valores omissos usam defaults.

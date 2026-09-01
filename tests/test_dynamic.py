@@ -3,10 +3,12 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
+from mado.agents.dast import DastAgent
+from mado.config import Config
 from mado.findings.schema import Finding
-from mado.graph.authorization import confirm_authorization, require_authorization
+from mado.graph.authorization import confirm_authorization, require_authorization, validate_target
 from mado.graph.graph_orchestrator import GraphOrchestrator
-from mado.graph.state import AbortScan, Target
+from mado.graph.state import AbortScan, AttackSurface, Route, Target
 
 
 class AuthorizationTests(unittest.TestCase):
@@ -20,8 +22,47 @@ class AuthorizationTests(unittest.TestCase):
         with self.assertRaisesRegex(AbortScan, "autorização não confirmada"):
             require_authorization(target, prompt=lambda _: "n")
 
+    def test_target_must_use_http_and_be_allowlisted(self) -> None:
+        validate_target(Target(url="http://localhost:8000"), ["localhost"])
+        with self.assertRaisesRegex(AbortScan, "http://"):
+            validate_target(Target(url="file:///etc/passwd"), ["localhost"])
+        with self.assertRaisesRegex(AbortScan, "allowed_hosts"):
+            validate_target(Target(url="https://example.com"), ["localhost"])
+
+    def test_risk_flag_does_not_bypass_host_allowlist(self) -> None:
+        with self.assertRaisesRegex(AbortScan, "allowed_hosts"):
+            GraphOrchestrator().run(
+                Target(url="https://example.com"),
+                yes_i_accept_risks=True,
+            )
+
 
 class GraphOrchestratorTests(unittest.TestCase):
+    def test_dast_scans_discovered_routes_with_limit(self) -> None:
+        surface = AttackSurface(
+            url="http://localhost:8000",
+            routes=[
+                Route(method="GET", path="http://localhost:8000/a"),
+                Route(method="GET", path="http://localhost:8000/b"),
+            ],
+        )
+        config = Config(
+            dast={
+                "enable_zap": False,
+                "enable_nuclei": True,
+                "timeout_seconds": 12,
+                "max_routes": 2,
+            }
+        )
+        with (
+            patch("mado.agents.dast.NucleiScanner.is_available", return_value=True),
+            patch("mado.agents.dast.NucleiScanner.run", return_value=[]) as mock_run,
+        ):
+            DastAgent().scan(surface, Target(url=surface.url), config)
+        self.assertEqual(mock_run.call_count, 2)
+        called_urls = [call.args[0] for call in mock_run.call_args_list]
+        self.assertEqual(called_urls, ["http://localhost:8000", "http://localhost:8000/a"])
+
     @patch("mado.agents.dast.ZapScanner.is_available", return_value=True)
     @patch("mado.agents.dast.NucleiScanner.is_available", return_value=False)
     def test_dynamic_run_compiles_report(self, _mock_nuclei: object, _mock_zap: object) -> None:

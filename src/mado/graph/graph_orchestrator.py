@@ -17,8 +17,8 @@ from mado.agents.report_agent import ReportAgent
 from mado.config import Config, load_config
 from mado.env import load_project_env
 from mado.findings.cache import ExplanationCache
-from mado.graph.authorization import require_authorization
-from mado.graph.state import ScanState, Target
+from mado.graph.authorization import require_authorization, validate_target
+from mado.graph.state import AbortScan, ScanState, Target
 from mado.llm.client import set_llm_enabled, set_llm_model
 from mado.orchestrator import _filter_and_enrich, run_scan
 from mado.report.models import Report
@@ -57,6 +57,10 @@ class GraphOrchestrator:
             state.warnings.extend(result.warnings)
 
         if target.is_running_app:
+            allowed_hosts = config.dast.get("allowed_hosts", [])
+            if not isinstance(allowed_hosts, list):
+                raise AbortScan("dast.allowed_hosts tem de ser uma lista.")
+            validate_target(target, [str(host) for host in allowed_hosts])
             if yes_i_accept_risks:
                 _logger = logging.getLogger(__name__)
                 _logger.warning("Bypassing authorization guardrail (--yes-i-accept-risks)")

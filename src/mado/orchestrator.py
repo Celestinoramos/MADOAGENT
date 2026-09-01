@@ -13,7 +13,7 @@ from mado.env import load_project_env
 from mado.explanations import explain_finding
 from mado.findings.cache import ExplanationCache
 from mado.findings.ignore import IgnoreList
-from mado.findings.schema import Finding, meets_severity_threshold, normalize_severity
+from mado.findings.schema import Finding, meets_severity_threshold, normalize_severity, severity_rank
 from mado.llm.client import set_llm_enabled, set_llm_model
 from mado.scanners.base import Scanner
 from mado.scanners.registry import (
@@ -46,6 +46,9 @@ def _git_changed_files(path: str) -> list[str]:
 
     If the path is not a Git repository or Git is unavailable, an empty list
     is returned so the caller can fall back to scanning the whole tree.
+
+    ``git diff HEAD`` includes both staged and unstaged changes versus the last
+    commit. Deleted paths are skipped.
     """
 
     repo = Path(path).resolve()
@@ -53,14 +56,26 @@ def _git_changed_files(path: str) -> list[str]:
         repo = repo.parent
 
     try:
-        completed = subprocess.run(["git", "-C", str(repo), "diff", "--name-only"], capture_output=True, text=True)
+        completed = subprocess.run(
+            ["git", "-C", str(repo), "diff", "HEAD", "--name-only"],
+            capture_output=True,
+            text=True,
+        )
     except FileNotFoundError:
         return []
 
     if completed.returncode != 0:
         return []
 
-    return [str((repo / line.strip()).resolve()) for line in completed.stdout.splitlines() if line.strip()]
+    changed: list[str] = []
+    for line in completed.stdout.splitlines():
+        relative = line.strip()
+        if not relative:
+            continue
+        absolute = (repo / relative).resolve()
+        if absolute.exists():
+            changed.append(str(absolute))
+    return changed
 
 
 def _matches_ignore(file_path: str, scan_root: Path, ignore_paths: list[str]) -> bool:
@@ -98,6 +113,24 @@ def _filter_non_code(findings: list[Finding], code_extensions: list[str]) -> lis
         for finding in findings
         if finding.scanner in _CODE_FILTER_EXEMPT or Path(finding.file).suffix.lower() in allowed
     ]
+
+
+def _deduplicate_findings(findings: list[Finding]) -> list[Finding]:
+    """Collapse overlapping scanner reports for the same source location."""
+    deduplicated: dict[tuple[str, int | None, str], Finding] = {}
+    passthrough: list[Finding] = []
+    for finding in findings:
+        if finding.line is None:
+            passthrough.append(finding)
+            continue
+        category = finding.cwe or finding.rule_id or finding.message_raw
+        key = (str(Path(finding.file).resolve()), finding.line, category)
+        existing = deduplicated.get(key)
+        if existing is None or severity_rank(normalize_severity(finding.severity_raw)) > severity_rank(
+            normalize_severity(existing.severity_raw)
+        ):
+            deduplicated[key] = finding
+    return [*deduplicated.values(), *passthrough]
 
 
 def _filter_and_enrich(
@@ -153,7 +186,7 @@ def run_scan(
     stacks.update(detect_stack(changed))
     stacks = {stack for stack in stacks if stack}
 
-    missing = missing_scanners_for_stack(stacks)
+    missing = missing_scanners_for_stack(stacks, active_config)
     if missing:
         warnings.append(
             "Scanners not installed (skipped): "
@@ -180,6 +213,7 @@ def run_scan(
 
     cache = ExplanationCache(root=scan_root, ttl_days=active_config.cache_ttl_days)
     findings = _filter_non_code(findings, active_config.code_extensions)
+    findings = _deduplicate_findings(findings)
     findings = _filter_and_enrich(findings, active_config, scan_root, cache)
 
     return ScanResult(findings=findings, warnings=warnings, stacks=stacks, config=active_config)

@@ -19,6 +19,7 @@ class NucleiScanner:
     """Run ``nuclei`` and normalize its JSONL output."""
 
     name: str = "nuclei"
+    timeout: int = 300
 
     @classmethod
     def is_available(cls) -> bool:
@@ -29,7 +30,10 @@ class NucleiScanner:
             raise RuntimeError("Nuclei binary not found. Install nuclei (go install) and ensure it is on PATH.")
 
         command = ["nuclei", "-u", url, "-jsonl", "-silent"]
-        completed = subprocess.run(command, capture_output=True, text=True)
+        try:
+            completed = subprocess.run(command, capture_output=True, text=True, timeout=self.timeout)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"Nuclei timed out after {self.timeout}s") from exc
         if completed.returncode not in (0, 1):
             details = completed.stderr.strip() or completed.stdout.strip() or "nuclei exited with an unexpected error"
             raise RuntimeError(f"Nuclei execution failed (exit code {completed.returncode}): {details}")
