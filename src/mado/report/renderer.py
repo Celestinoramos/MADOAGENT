@@ -6,6 +6,7 @@ import json
 
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 from mado.findings.schema import Finding, normalize_severity
 from mado.report.models import Report
@@ -19,8 +20,25 @@ _SEVERITY_STYLES = {
 }
 
 
+_SEVERITY_COLUMN_WIDTH = 8
+_ID_COLUMN_WIDTH = 12
+_TABLE_CHROME_WIDTH = 13
+_MIN_FLEXIBLE_WIDTH = 34
+
+
 def _severity_style(severity: str) -> str:
     return _SEVERITY_STYLES.get(severity, "white")
+
+
+def _location(finding: Finding) -> str:
+    return finding.file if finding.line is None else f"{finding.file}:{finding.line}"
+
+
+def _summarize(message: str, limit: int) -> str:
+    collapsed = " ".join(message.split())
+    if len(collapsed) <= limit:
+        return collapsed
+    return collapsed[:limit].rsplit(" ", 1)[0] + "…"
 
 
 def render_findings_terminal(findings: list[Finding]) -> None:
@@ -31,26 +49,49 @@ def render_findings_terminal(findings: list[Finding]) -> None:
         console.print("[green]No findings returned.[/green]")
         return
 
+    # Widths are assigned up-front because rule ids and paths are unbreakable
+    # tokens: left to measure them, Rich collapses whole columns to zero width.
+    flexible_width = console.width - _TABLE_CHROME_WIDTH - _SEVERITY_COLUMN_WIDTH - _ID_COLUMN_WIDTH
+    if flexible_width < _MIN_FLEXIBLE_WIDTH:
+        _render_findings_stacked(console, findings)
+        return
+
+    location_width = max(16, min(40, flexible_width * 2 // 5))
+    issue_width = flexible_width - location_width
+
     table = Table(title="Madó findings")
-    table.add_column("Severity", no_wrap=True)
-    table.add_column("ID", style="cyan", no_wrap=True)
-    table.add_column("File", style="white")
-    table.add_column("Line", style="white", no_wrap=True)
-    table.add_column("Rule", style="white")
-    table.add_column("Message", style="white", no_wrap=True)
+    table.add_column("Severity", width=_SEVERITY_COLUMN_WIDTH, no_wrap=True)
+    table.add_column("ID", style="cyan", width=_ID_COLUMN_WIDTH, no_wrap=True)
+    table.add_column("Location", style="white", width=location_width, overflow="fold")
+    table.add_column("Issue", style="white", width=issue_width, overflow="fold")
 
     for finding in findings:
         severity = normalize_severity(finding.severity_raw)
+        issue = Text(_summarize(finding.message_raw, max(220, issue_width * 3)))
+        if finding.rule_id:
+            issue.append(f"\n{finding.rule_id}", style="dim")
         table.add_row(
-            f"[{_severity_style(severity)}]{severity.upper()}[/{_severity_style(severity)}]",
+            Text(severity.upper(), style=_severity_style(severity)),
             finding.id,
-            finding.file,
-            str(finding.line) if finding.line is not None else "-",
-            finding.rule_id or "-",
-            finding.message_raw,
+            _location(finding),
+            issue,
         )
 
     console.print(table)
+
+
+def _render_findings_stacked(console: Console, findings: list[Finding]) -> None:
+    """Render findings one per block, for terminals too narrow for a table."""
+    for finding in findings:
+        severity = normalize_severity(finding.severity_raw)
+        console.print(
+            f"[{_severity_style(severity)}]{severity.upper()}[/{_severity_style(severity)}] [cyan]{finding.id}[/cyan]"
+        )
+        console.print(f"  {_location(finding)}", overflow="fold")
+        console.print(f"  {_summarize(finding.message_raw, 200)}", overflow="fold")
+        if finding.rule_id:
+            console.print(f"  [dim]{finding.rule_id}[/dim]", overflow="fold")
+        console.print()
 
 
 def render_findings_json(findings: list[Finding]) -> str:

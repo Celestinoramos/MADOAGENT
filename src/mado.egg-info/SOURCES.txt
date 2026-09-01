@@ -1,3 +1,4 @@
+LICENSE
 README.md
 mado-desenho-implementacao.md
 pyproject.toml
@@ -30,6 +31,7 @@ src/mado/findings/__init__.py
 src/mado/findings/cache.py
 src/mado/findings/ignore.py
 src/mado/findings/schema.py
+src/mado/findings/store.py
 src/mado/graph/__init__.py
 src/mado/graph/authorization.py
 src/mado/graph/graph_orchestrator.py
@@ -62,6 +64,7 @@ tests/test_dynamic.py
 tests/test_env.py
 tests/test_explanations.py
 tests/test_findings_schema.py
+tests/test_last_scan.py
 tests/test_llm.py
 tests/test_normalizers.py
 tests/test_orchestrator.py
@@ -71,3 +74,4 @@ tests/test_renderer.py
 tests/test_scanners.py
 tests/test_semgrep_scanner.py
 tests/test_stack.py
+tests/test_zap.py

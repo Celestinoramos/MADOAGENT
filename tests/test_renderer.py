@@ -1,18 +1,26 @@
 from __future__ import annotations
 
+import io
 import json
 import unittest
+from unittest import mock
+
+from rich.console import Console
 
 from mado.explanations.schema import FindingExplanation
 from mado.findings.schema import Finding
+from mado.report import renderer
 from mado.report.models import Report, highest_severity, severity_counts
 from mado.report.renderer import (
     render_findings_json,
     render_findings_markdown,
+    render_findings_terminal,
     render_report_json,
     render_report_markdown,
     render_report_sarif,
 )
+
+_LONG_RULE_ID = "python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1"
 
 
 def _finding(severity: str, scanner: str = "semgrep") -> Finding:
@@ -92,6 +100,58 @@ class RendererTests(unittest.TestCase):
             run["results"][0]["locations"][0]["physicalLocation"]["region"]["startLine"],
             1,
         )
+
+
+def _render_terminal(findings: list[Finding], width: int) -> str:
+    buffer = io.StringIO()
+    console = Console(file=buffer, width=width, height=40, no_color=True)
+    with mock.patch.object(renderer, "Console", return_value=console):
+        render_findings_terminal(findings)
+    return buffer.getvalue()
+
+
+class TerminalTableTests(unittest.TestCase):
+    def _long_finding(self) -> Finding:
+        finding = _finding("ERROR")
+        finding.id = "f_8beb8d38bd"
+        finding.rule_id = _LONG_RULE_ID
+        finding.file = "src/mado/findings/an/unusually/deep/path/cache.py"
+        return finding
+
+    def test_all_columns_survive_unbreakable_tokens(self) -> None:
+        for width in (80, 100, 140, 200):
+            with self.subTest(width=width):
+                output = _render_terminal([self._long_finding()], width)
+                for header in ("Severity", "ID", "Location", "Issue"):
+                    self.assertIn(header, output)
+
+    def test_table_never_exceeds_console_width(self) -> None:
+        for width in (80, 100, 140, 200):
+            with self.subTest(width=width):
+                output = _render_terminal([self._long_finding()], width)
+                self.assertLessEqual(max(len(line) for line in output.splitlines()), width)
+
+    def test_severity_and_id_are_never_truncated(self) -> None:
+        for width in (80, 100, 140, 200):
+            with self.subTest(width=width):
+                output = _render_terminal([self._long_finding()], width)
+                self.assertIn("HIGH", output)
+                self.assertIn("f_8beb8d38bd", output)
+
+    def test_row_content_is_present(self) -> None:
+        output = _render_terminal([self._long_finding()], 200)
+        self.assertIn("cache.py:1", output)
+        self.assertIn("Possible SQL injection", output)
+        self.assertIn(_LONG_RULE_ID, output)
+
+    def test_narrow_terminal_falls_back_to_stacked_layout(self) -> None:
+        output = _render_terminal([self._long_finding()], 40)
+        self.assertNotIn("┏", output)
+        self.assertIn("f_8beb8d38bd", output)
+        self.assertIn("Possible SQL injection", output)
+
+    def test_empty_findings(self) -> None:
+        self.assertIn("No findings returned.", _render_terminal([], 80))
 
 
 if __name__ == "__main__":
